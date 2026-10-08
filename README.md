@@ -241,6 +241,33 @@ Abra as simulações no Wokwi e inicie os dois ESP32:
 
 Confira as configurações de rede e MQTT antes de iniciar as simulações.
 
+
+## 📚 Documentação para continuidade do projeto
+
+O software do projeto foi desenvolvido e validado em ambiente simulado, utilizando Wokwi, AWS, FIWARE e FastAPI.
+
+A próxima etapa do Grupo DEBUGGERS é realizar a montagem física dos componentes e validar o funcionamento integrado durante o hands-on.
+
+Para facilitar a continuidade do desenvolvimento, disponibilizamos os seguintes documentos:
+
+| Documento | Conteúdo |
+|---|---|
+| [Status do Projeto](docs/STATUS_DO_PROJETO.md) | Funcionalidades concluídas, pendências e checklist do hands-on. |
+| [Guia de Execução](docs/GUIA_DE_EXECUCAO.md) | Instruções para configurar e executar o ambiente. |
+| [Arquitetura e Integração](docs/ARQUITETURA_E_INTEGRACAO.md) | Comunicação MQTT, FIWARE, FastAPI e integração dos dispositivos. |
+| [Dashboard](docs/DASHBOARD.md) | Orientações para evolução da interface e preservação das funcionalidades. |
+
+### Estado atual
+
+- **Software e simulações Wokwi:** desenvolvidos e validados.
+- **Backend e integração FIWARE:** desenvolvidos e testados.
+- **Dashboard:** funcional, com melhorias visuais previstas.
+- **Montagem física:** pendente.
+- **Hands-on:** pendente de execução e validação no hardware real.
+
+
+
+
 ## 🔒 Observações de segurança
 
 Este repositório documenta um protótipo acadêmico.
