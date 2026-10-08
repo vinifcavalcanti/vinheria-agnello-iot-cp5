@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "author": "Vinícius Cavalcanti",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": { "env": "micropython-20260406-v1.28.0" }
+    },
+    { "type": "wokwi-led", "id": "led1", "top": -42, "left": -159.4, "attrs": { "color": "red" } },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 71.15,
+      "left": -134.4,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -156.8,
+      "left": -80.8,
+      "attrs": { "pins": "i2c" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:26", "r1:2", "green", [ "h0" ] ],
+    [ "r1:1", "led1:A", "green", [ "v0" ] ],
+    [ "led1:C", "esp:GND.1", "green", [ "v0" ] ],
+    [ "lcd1:VCC", "esp:5V", "red", [ "h-28.8", "v163.3", "h76.8", "v134.4" ] ],
+    [ "lcd1:GND", "esp:GND.1", "black", [ "h-38.4", "v163.2", "h96", "v134.4" ] ],
+    [ "lcd1:SDA", "esp:21", "green", [ "h-19.2", "v134.6", "h86.4", "v0", "h134.4", "v48" ] ],
+    [ "lcd1:SCL", "esp:22", "green", [ "h-9.6", "v86.7", "h230.4", "v19.2" ] ]
+  ],
+  "dependencies": {}
+}

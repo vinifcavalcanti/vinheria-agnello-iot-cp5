@@ -1,0 +1,17 @@
+{
+  "temperatura": {
+    "ativo": true,
+    "minimo": 10.0,
+    "maximo": 30.0
+  },
+  "umidade": {
+    "ativo": true,
+    "minimo": 50.0,
+    "maximo": 80.0
+  },
+  "luminosidade_bruta": {
+    "ativo": true,
+    "minimo": 1000,
+    "maximo": 2500
+  }
+}

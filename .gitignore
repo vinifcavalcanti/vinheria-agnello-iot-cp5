@@ -1,0 +1,34 @@
+
+# Ambiente virtual Python
+.venv/
+venv/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Variaveis de ambiente e credenciais
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Arquivos de ferramentas e sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs e arquivos temporarios
+*.log
+*.tmp
+*.bak
+
+# Arquivos compactados
+*.zip
+
+# Copias antigas do backend mantidas para execucao local
+/main.py
+/limites.json
