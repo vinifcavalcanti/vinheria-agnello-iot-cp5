@@ -34,7 +34,7 @@ lcd.putstr("Iniciando...")
 
 
 
-SERVIDOR = "34.228.116.107"
+SERVIDOR = "54.237.148.216"
 
 TOPICO = b"cp5/agnello-8ea14fa3/lampada"
 TOPICO_ESTADO = b"cp5/agnello-8ea14fa3/lampada/estado"

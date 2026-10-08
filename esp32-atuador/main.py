@@ -20,7 +20,7 @@ lcd.putstr("ESP32 ATUADOR")
 
 
 
-SERVIDOR = "34.228.116.107"
+SERVIDOR = "54.237.148.216"
 
 # Comandos automaticos enviados pelo monitor
 TOPICO = b"cp5/agnello-8ea14fa3/lampada"
