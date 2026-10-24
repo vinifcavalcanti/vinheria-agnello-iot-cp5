@@ -161,10 +161,18 @@ function renderMonitor() {
 
 function renderActuator() {
   const current = state.actuator;
-  const fresh = current && isFresh(current.recebido_em);
+  const fresh = !!current
+  && current.desatualizado !== true
+  && isFresh(current.recebido_em);
   $('value-brilho').textContent = current ? format(current.brilho) : '—';
   $('track-brilho').style.width = current ? `${current.brilho}%` : '0%';
-  $('state-brilho').textContent = !current ? 'Sem confirmação' : !fresh ? 'Última confirmação' : state.demo ? 'Exemplo' : 'ESP respondeu';
+  $('state-brilho').textContent = !current
+  ? 'Sem confirmação'
+  : !fresh
+    ? 'Última confirmação (desatualizada)'
+    : state.demo
+      ? 'Exemplo'
+      : 'ESP respondeu';
   $('state-brilho').className = `pill ${fresh ? 'good' : 'warning'}`;
   $('control-mode').textContent = !current ? 'Modo não consultado' : `${current.modo === 'automatico' ? 'Automático' : 'Manual'}${fresh ? '' : ' · última resposta'}`;
   $('mode-auto').classList.toggle('selected', fresh && current.modo === 'automatico');
@@ -181,7 +189,10 @@ const ACTION_LABEL = { AQUECER: 'Aquecer', RESFRIAR: 'Resfriar', UMIDIFICAR: 'Um
 const ACTION_FIELD = { temperatura: 'temperatura', umidade: 'umidade', luminosidade: 'luminosidade_bruta' };
 function renderActuation() {
   const alerts = state.alerts, monitorFresh = !!alerts && !state.monitorError && isFresh(alerts.ultima_atualizacao);
-  const actuator = state.actuator, actuatorFresh = !!actuator && isFresh(actuator.recebido_em);
+  const actuator = state.actuator,
+  actuatorFresh = !!actuator
+    && actuator.desatualizado !== true
+    && isFresh(actuator.recebido_em);
   const fromEsp = !!(actuatorFresh && actuator.ambiente);
   const env = fromEsp ? actuator.ambiente : monitorFresh ? predictActions(alerts.sensores) : null;
   $('actuation-source').textContent = state.demo ? 'Exemplo' : fromEsp ? 'Confirmado pelo ESP' : env ? 'Previsto pela dashboard' : 'Sem dados';
@@ -286,7 +297,11 @@ async function lampCommand(mode) {
     activity(mode === 'manual' ? `Solicitado modo manual com brilho de ${brightness}%.` : 'Solicitado modo automático da lâmpada.');
     // O atuador também publica o estado a cada ciclo do monitor; uma resposta
     // anterior ao comando pode chegar primeiro. Confirma em até 3 consultas.
-    const confirmed = data => data?.modo === mode && (mode !== 'manual' || data.brilho === brightness);
+    const confirmed = data =>
+      data?.desatualizado !== true
+      && isFresh(data?.recebido_em)
+      && data?.modo === mode
+      && (mode !== 'manual' || data.brilho === brightness);
     let result;
     for (let attempt = 0; attempt < 3; attempt++) {
       result = await queryActuator({ silent: true });
@@ -294,7 +309,7 @@ async function lampCommand(mode) {
       if (confirmed(result)) break;
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    if (result?.modo === mode && (mode !== 'manual' || result.brilho === brightness)) {
+    if (confirmed(result)) {
       statusText('command-status', `ESP respondeu: ${mode === 'manual' ? 'manual' : 'automático'}, brilho ${result.brilho}%.`, 'success');
       toast('Estado do atuador confirmado por uma resposta do ESP.', 'good');
       // No automático o brilho só muda no próximo comando do monitor (~2 s).
