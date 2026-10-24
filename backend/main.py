@@ -10,7 +10,7 @@ import json
 import paho.mqtt.client as mqtt
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
-from threading import Event, Thread
+from threading import Event, Thread, Lock
 from typing import Literal
 from pathlib import Path
 from pydantic import ConfigDict, model_validator
@@ -1004,15 +1004,41 @@ def validar_ambiente(ambiente):
     return validado
 
 
+# Ultimo estado confirmado pelo ESP32 Atuador
+ultimo_estado_atuador = None
+lock_estado_atuador = Lock()
+
+
+
 @app.get("/atuador/estado")
+
 def consultar_estado_controle():
+    global ultimo_estado_atuador
+
     resposta_recebida = Event()
     resultado = {}
 
     cliente_consulta = mqtt.Client(
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2
     )
-    cliente_consulta.connect_timeout = 5
+
+    def estado_em_cache():
+        with lock_estado_atuador:
+            if ultimo_estado_atuador is None:
+                return None
+            return dict(ultimo_estado_atuador)
+
+    def resposta_indisponivel(detalhe, status_code):
+        estado = estado_em_cache()
+
+        if estado is not None:
+            estado["desatualizado"] = True
+            return estado
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=detalhe
+        )
 
     def ao_conectar(cliente, userdata, flags, reason_code, properties):
         if reason_code.is_failure:
@@ -1036,7 +1062,6 @@ def consultar_estado_controle():
         )
 
     def ao_receber(cliente, userdata, mensagem):
-        # Ignora mensagens antigas armazenadas no servidor.
         if mensagem.retain:
             return
 
@@ -1055,7 +1080,7 @@ def consultar_estado_controle():
             if type(brilho) is not int or not 0 <= brilho <= 100:
                 return
 
-            resultado["estado"] = {
+            estado = {
                 "modo": modo,
                 "brilho": brilho,
                 "recebido_em": datetime.now(timezone.utc).isoformat()
@@ -1063,8 +1088,9 @@ def consultar_estado_controle():
 
             ambiente = validar_ambiente(dados.get("ambiente"))
             if ambiente is not None:
-                resultado["estado"]["ambiente"] = ambiente
+                estado["ambiente"] = ambiente
 
+            resultado["estado"] = estado
             resposta_recebida.set()
 
         except (ValueError, UnicodeError):
@@ -1079,28 +1105,32 @@ def consultar_estado_controle():
         cliente_consulta.loop_start()
 
         if not resposta_recebida.wait(timeout=6):
-            raise HTTPException(
-                status_code=504,
-                detail="Não chegou uma resposta do atuador. Confira o Wokwi."
+            return resposta_indisponivel(
+                "Não chegou uma resposta do atuador. Confira o Wokwi.",
+                504
             )
 
         if "erro" in resultado:
-            raise HTTPException(
-                status_code=502,
-                detail=resultado["erro"]
-            )
+            return resposta_indisponivel(resultado["erro"], 502)
 
-        return resultado["estado"]
+        estado = resultado["estado"]
+
+        with lock_estado_atuador:
+            ultimo_estado_atuador = dict(estado)
+
+        estado["desatualizado"] = False
+        return estado
 
     except (OSError, RuntimeError, ValueError):
-        raise HTTPException(
-            status_code=502,
-            detail="Falha ao consultar o estado pelo MQTT."
+        return resposta_indisponivel(
+            "Falha ao consultar o estado pelo MQTT.",
+            502
         )
 
     finally:
         cliente_consulta.disconnect()
         cliente_consulta.loop_stop()
+
 
 TOPICO_ALERTAS = "cp5/agnello-8ea14fa3/monitor/alertas"
 
