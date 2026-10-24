@@ -1,4 +1,4 @@
-import { ApiClient, SENSOR_INFO, normalizeBase, isFresh, validateAlertData, validateLimits, unwrapList, resourceMutation, csvHistory } from './core.js';
+import { ApiClient, SENSOR_INFO, normalizeBase, isFresh, validateAlertData, validateLimits, unwrapList, resourceMutation, csvHistory, predictActions, isCorrective } from './core.js';
 
 const $ = id => document.getElementById(id);
 const paths = {
@@ -45,7 +45,8 @@ const state = {
   overviewSensor: 'temperatura', activities: [], monitorError: null, automation: false,
   epoch: 0, alertGeneration: 0, busyAlert: false, stoppingAlerts: false, pollTimer: null, polling: false,
   chartEpoch: { overview: 0, history: 0 }, graphURLs: {}, resourceEpoch: 0, deviceEpoch: 0, historyEpoch: 0,
-  editor: null, confirmation: null, previousAlerts: null, lastChart: 0, commandVersion: 0, commandPending: false, actuatorEpoch: 0
+  editor: null, confirmation: null, previousAlerts: null, lastChart: 0, commandVersion: 0, commandPending: false, actuatorEpoch: 0,
+  limitsSync: null
 };
 let graphQueue = Promise.resolve();
 
@@ -102,6 +103,9 @@ function demoAlerts() {
   }
   return { alertas: alerts, sensores: sensors, ultima_atualizacao: new Date().toISOString() };
 }
+function demoActuator() {
+  return { modo: 'automatico', brilho: 50, recebido_em: new Date().toISOString(), ambiente: { ...predictActions(demoAlerts().sensores), limites: 'sincronizados' } };
+}
 function demoHistory(sensor) {
   const bases = { temperatura: 20.4, umidade: 64.8, luminosidade: 1682, brilho: 50 };
   return Array.from({ length: 30 }, (_, i) => ({ data: new Date(Date.now() - (29 - i) * 20000).toISOString(), valor: sensor === 'brilho' ? [0, 50, 100, 50][Math.floor(i / 8)] : +(bases[sensor] + Math.sin(i / 3) * bases[sensor] * .025).toFixed(sensor === 'luminosidade' ? 0 : 1) }));
@@ -152,7 +156,7 @@ function renderMonitor() {
       state.previousAlerts = signature;
     }
   }
-  renderAutomation();
+  renderAutomation(); renderActuation();
 }
 
 function renderActuator() {
@@ -168,6 +172,38 @@ function renderActuator() {
   $('light-description').textContent = !fresh ? 'Consulte o atuador para confirmar o modo e o brilho.' : current.modo === 'automatico' ? 'O ESP monitor define o brilho: 0%, 50% ou 100%, conforme o LDR.' : 'A intensidade é definida por você. O atuador ignora os comandos automáticos do monitor.';
   $('lamp-art').style.color = current?.brilho ? '#b39556' : '#b1a7ad';
   $('lamp-art').style.background = current?.brilho ? `radial-gradient(ellipse at center,rgba(227,195,122,${current.brilho / 200}),transparent 72%)` : 'none';
+  renderActuation();
+}
+
+// Mostra a decisão confirmada pelo ESP atuador. Sem resposta recente do
+// ESP, exibe a previsão calculada com as leituras e limites da API.
+const ACTION_LABEL = { AQUECER: 'Aquecer', RESFRIAR: 'Resfriar', UMIDIFICAR: 'Umidificar', DESUMIDIFICAR: 'Desumidificar', 'AUMENTAR LUZ': 'Aumentar luz', 'DIMINUIR LUZ': 'Diminuir luz', NORMAL: 'Normal', 'LUZ NORMAL': 'Normal', DESATIVADO: 'Desativado', AGUARDANDO: 'Aguardando leitura', 'DADOS ANTIGOS': 'Leitura antiga' };
+const ACTION_FIELD = { temperatura: 'temperatura', umidade: 'umidade', luminosidade: 'luminosidade_bruta' };
+function renderActuation() {
+  const alerts = state.alerts, monitorFresh = !!alerts && !state.monitorError && isFresh(alerts.ultima_atualizacao);
+  const actuator = state.actuator, actuatorFresh = !!actuator && isFresh(actuator.recebido_em);
+  const fromEsp = !!(actuatorFresh && actuator.ambiente);
+  const env = fromEsp ? actuator.ambiente : monitorFresh ? predictActions(alerts.sensores) : null;
+  $('actuation-source').textContent = state.demo ? 'Exemplo' : fromEsp ? 'Confirmado pelo ESP' : env ? 'Previsto pela dashboard' : 'Sem dados';
+  $('actuation-source').className = `pill ${fromEsp ? 'good' : env ? 'warning' : ''}`;
+  for (const key of ['temperatura', 'umidade', 'luminosidade']) {
+    const action = env?.[key], item = alerts?.sensores?.[ACTION_FIELD[key]], info = SENSOR_INFO[key];
+    $(`act-value-${key}`).textContent = action ? ACTION_LABEL[action] ?? action : '—';
+    $(`act-detail-${key}`).textContent = item ? `${format(item.valor, info.decimals)} ${info.unit} · faixa ${format(item.minimo, info.decimals)}–${format(item.maximo, info.decimals)} ${info.unit}` : 'Aguardando dados';
+    $(`act-${key}`).className = `actuation-item ${!action ? '' : isCorrective(action) ? 'act-alert' : action.endsWith('NORMAL') ? 'act-ok' : 'act-warn'}`;
+  }
+  const led = env ? env.led_atuacao : null;
+  $('act-value-led').textContent = led === null ? '—' : led ? (fromEsp ? 'Piscando' : 'Deve piscar') : 'Desligado';
+  $('act-detail-led').textContent = led === null ? 'Aguardando dados' : led ? 'Temperatura ou umidade fora da faixa' : 'Temperatura e umidade sem correção';
+  $('act-led').className = `actuation-item ${led === null ? '' : led ? 'act-alert' : 'act-ok'}`;
+
+  $('dot-monitor').className = `status-dot ${state.demo ? 'amber' : monitorFresh ? 'green' : state.monitorError ? 'red' : alerts ? 'amber' : ''}`;
+  $('status-monitor').textContent = state.demo ? 'Monitor: exemplo' : monitorFresh ? 'Monitor online · leituras recentes' : state.monitorError ? 'Monitor: API sem resposta' : alerts ? 'Monitor sem leituras recentes' : 'Monitor: aguardando';
+  $('dot-atuador').className = `status-dot ${actuatorFresh ? 'green' : actuator ? 'amber' : ''}`;
+  $('status-atuador').textContent = state.demo ? 'Atuador: exemplo' : actuatorFresh ? `Atuador online · ${time(actuator.recebido_em)}` : actuator ? `Atuador sem resposta desde ${time(actuator.recebido_em)}` : 'Atuador: aguardando resposta';
+  const synced = fromEsp ? actuator.ambiente.limites === 'sincronizados' : null;
+  $('dot-limites').className = `status-dot ${synced === true ? 'green' : synced === false ? 'amber' : state.limitsSync === false ? 'red' : ''}`;
+  $('status-limites').textContent = synced === true ? 'Limites da dashboard aplicados no ESP' : synced === false ? 'ESP usando limites padrão' : state.limitsSync === true ? 'Limites enviados aos ESPs' : state.limitsSync === false ? 'Último envio de limites falhou' : 'Limites: confirmação pendente';
 }
 
 function renderAutomation() {
@@ -223,7 +259,7 @@ async function toggleAlerts() {
 async function queryActuator({ silent = false } = {}) {
   const epoch = state.epoch, version = state.commandVersion, token = ++state.actuatorEpoch;
   try {
-    const data = state.demo ? { modo: 'automatico', brilho: 50, recebido_em: new Date().toISOString() } : await api.request('/atuador/estado', { timeout: 10000 });
+    const data = state.demo ? demoActuator() : await api.request('/atuador/estado', { timeout: 10000 });
     if (epoch !== state.epoch || version !== state.commandVersion || token !== state.actuatorEpoch) return;
     if (!['manual', 'automatico'].includes(data.modo) || !Number.isInteger(data.brilho) || data.brilho < 0 || data.brilho > 100) throw new Error('Resposta inesperada do atuador.');
     state.actuator = data; renderActuator();
@@ -248,11 +284,21 @@ async function lampCommand(mode) {
     if (epoch !== state.epoch) return;
     statusText('command-status', 'Comando aceito pelo MQTT. Aguardando resposta do atuador…');
     activity(mode === 'manual' ? `Solicitado modo manual com brilho de ${brightness}%.` : 'Solicitado modo automático da lâmpada.');
-    const result = await queryActuator({ silent: true });
-    if (epoch !== state.epoch) return;
+    // O atuador também publica o estado a cada ciclo do monitor; uma resposta
+    // anterior ao comando pode chegar primeiro. Confirma em até 3 consultas.
+    const confirmed = data => data?.modo === mode && (mode !== 'manual' || data.brilho === brightness);
+    let result;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      result = await queryActuator({ silent: true });
+      if (epoch !== state.epoch) return;
+      if (confirmed(result)) break;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
     if (result?.modo === mode && (mode !== 'manual' || result.brilho === brightness)) {
       statusText('command-status', `ESP respondeu: ${mode === 'manual' ? 'manual' : 'automático'}, brilho ${result.brilho}%.`, 'success');
       toast('Estado do atuador confirmado por uma resposta do ESP.', 'good');
+      // No automático o brilho só muda no próximo comando do monitor (~2 s).
+      if (mode === 'automatico') setTimeout(() => { if (epoch === state.epoch) void queryActuator({ silent: true }); }, 3000);
     } else {
       statusText('command-status', 'O MQTT aceitou o comando, mas o estado solicitado ainda não foi confirmado. Use “Consultar ESP”.', 'error');
     }
@@ -268,7 +314,7 @@ async function poll() {
   try {
     if (state.demo) {
       state.alerts = demoAlerts(); state.monitorError = null;
-      state.actuator = { modo: 'automatico', brilho: 50, recebido_em: new Date().toISOString() };
+      state.actuator = demoActuator();
     } else {
       const data = await api.request('/alertas');
       if (epoch !== state.epoch) return;
@@ -377,19 +423,36 @@ async function loadLimits() {
     statusText('limits-status', state.demo ? 'Configuração ilustrativa. A gravação real está desativada.' : 'Configuração carregada da API.', 'success');
   } catch (error) { if (epoch === state.epoch) { state.limits = null; fillLimits(); statusText('limits-status', error.message, 'error'); } }
 }
+function readLimitsForm() {
+  const number = id => $(id).value === '' ? NaN : Number($(id).value), data = {};
+  for (const key of ['temperatura', 'umidade', 'luminosidade_bruta']) data[key] = { ativo: $(`limit-active-${key}`).checked, minimo: number(`limit-min-${key}`), maximo: number(`limit-max-${key}`) };
+  return data;
+}
+// Validação imediata: o botão só fica ativo com faixas válidas.
+function checkLimitsForm() {
+  if (!state.limits) return;
+  try { validateLimits(readLimitsForm()); $('save-limits').disabled = false; statusText('limits-status', 'Alterações ainda não salvas.'); }
+  catch (error) { $('save-limits').disabled = true; statusText('limits-status', error.message, 'error'); }
+}
 async function saveLimits(event) {
   event.preventDefault();
   if (state.demo) return toast('Saia do modo de exemplo para salvar limites reais.', 'error');
   const epoch = state.epoch;
   await busy($('save-limits'), async () => {
     try {
-      const data = {};
-      for (const key of ['temperatura', 'umidade', 'luminosidade_bruta']) data[key] = { ativo: $(`limit-active-${key}`).checked, minimo: Number($(`limit-min-${key}`).value), maximo: Number($(`limit-max-${key}`).value) };
+      const data = readLimitsForm();
       validateLimits(data);
-      await api.request('/limites', { method: 'PUT', body: data });
+      const response = await api.request('/limites', { method: 'PUT', body: data });
       if (epoch !== state.epoch) return;
-      state.limits = data; statusText('limits-status', 'Limites salvos pela API no limites.json.', 'success');
-      toast('Limites atualizados.', 'good'); activity('Limites dos sensores atualizados.', 'green'); void poll();
+      state.limits = data; state.limitsSync = response?.sincronizado === true;
+      if (state.limitsSync) {
+        statusText('limits-status', 'Limites salvos no limites.json e enviados aos ESPs pelo MQTT.', 'success');
+        toast('Limites atualizados e enviados aos ESPs.', 'good'); activity('Limites atualizados e enviados aos ESPs.', 'green');
+      } else {
+        statusText('limits-status', 'Limites salvos no limites.json, mas o envio pelo MQTT falhou. Os ESPs mantêm a configuração anterior.', 'error');
+        toast('Limites salvos, mas não enviados aos ESPs.', 'error'); activity('Limites salvos sem envio aos ESPs.', 'amber');
+      }
+      renderActuation(); void poll();
     } catch (error) { if (epoch === state.epoch) statusText('limits-status', error.message, 'error'); }
   });
 }
@@ -542,7 +605,20 @@ function showPage() {
   if (state.page === 'fiware') void loadResource();
 }
 
-function openSettings() { $('api-url').value = api.base; $('demo-option').checked = state.demo; $('settings-dialog').showModal(); }
+function openSettings() { $('api-url').value = api.base; $('demo-option').checked = state.demo; $('status-list').innerHTML = ''; $('settings-dialog').showModal(); }
+// Diagnóstico rápido para o hands-on: API, FIWARE, MQTT e limites.json.
+async function checkServices() {
+  const list = $('status-list');
+  const row = (ok, name, detail) => `<li><span class="status-dot ${ok ? 'green' : 'red'}"></span><span><strong>${escape(name)}</strong> · ${escape(detail)}</span></li>`;
+  let client;
+  try { client = new ApiClient(normalizeBase($('api-url').value)); } catch (error) { list.innerHTML = row(false, 'Endereço', error.message); return; }
+  list.innerHTML = '<li><span class="status-dot"></span><span>Verificando os serviços…</span></li>';
+  try {
+    const data = await client.request('/status', { timeout: 20000 });
+    const names = { fiware: 'FIWARE (Orion)', mqtt: 'Broker MQTT', limites: 'Arquivo de limites' };
+    list.innerHTML = row(true, 'API FastAPI', `respondeu · servidor ${data.servidor}`) + Object.entries(names).map(([key, name]) => row(data.servicos?.[key]?.ok === true, name, data.servicos?.[key]?.detalhe ?? 'Sem informação')).join('');
+  } catch (error) { list.innerHTML = row(false, 'API FastAPI', error.message); }
+}
 async function changeConnection(base, demo) {
   if (state.automation || state.busyAlert || state.stoppingAlerts) throw new Error('Desative os alertas automáticos na visão geral antes de trocar a conexão.');
   state.epoch++; state.alertGeneration++; state.commandVersion++;
@@ -580,6 +656,8 @@ $('device-form').onsubmit = createDevice;
 $('device-table').onclick = event => handleRowAction(event, 'dispositivos', state.devices);
 $('reload-limits').onclick = () => busy($('reload-limits'), loadLimits);
 $('limits-form').onsubmit = saveLimits;
+$('limits-form').oninput = checkLimitsForm;
+$('check-status').onclick = () => busy($('check-status'), checkServices);
 $('reload-resource').onclick = () => busy($('reload-resource'), loadResource);
 $('new-resource').onclick = () => openEditor(state.resource, 'create');
 $('resource-table').onclick = event => handleRowAction(event, state.resource, state.resources);
@@ -593,5 +671,7 @@ window.addEventListener('hashchange', showPage);
 // Sem envio no unload: o navegador não garante finalizar fetch/MQTT.
 // Para encerrar os alarmes, o usuário desativa a automação antes de sair.
 setInterval(() => { $('clock').textContent = `${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: 'short' }).format(new Date())} · ${time(new Date().toISOString())}`; renderActuator(); }, 1000);
+// Consulta periódica do atuador: mantém o status online e as decisões ambientais.
+setInterval(() => { if (!state.demo && !state.commandPending && document.visibilityState === 'visible') void queryActuator({ silent: true }); }, 15000);
 activity('Dashboard iniciada. Aguardando leituras da API.');
 showPage(); void poll(); void queryActuator({ silent: true });

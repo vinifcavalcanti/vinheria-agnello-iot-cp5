@@ -23,23 +23,23 @@ tela_atual = 0
 ultima_troca_lcd = time.ticks_ms()
 ultima_renderizacao_lcd = 0
 
-lcd.clear()
-lcd.move_to(0, 0)
-lcd.putstr("AGNELLO CP5")
-lcd.move_to(0, 1)
-lcd.putstr("Iniciando...")
 
-
-
-
-
-
-SERVIDOR = "54.237.148.216"
+SERVIDOR = "98.81.197.236"
 
 TOPICO = b"cp5/agnello-8ea14fa3/lampada"
 TOPICO_ESTADO = b"cp5/agnello-8ea14fa3/lampada/estado"
 TOPICO_DADOS = b"/ul/TEF/monitor001/attrs"
 TOPICO_ALERTAS = b"cp5/agnello-8ea14fa3/monitor/alertas"
+
+# Limites da dashboard, publicados pelo backend com retain
+TOPICO_LIMITES = b"cp5/agnello-8ea14fa3/config/limites"
+
+# Faixa do LDR usada no brilho automatico. Fallback igual ao
+# backend/limites.json ate o backend enviar a configuracao.
+# Lembrete: ADC maior significa MENOS luz.
+luz_minima = 1000
+luz_maxima = 2500
+ultimo_limite_recebido = None
 
 sensor = dht.DHT22(Pin(15))
 
@@ -113,6 +113,62 @@ def atualizar_lcd():
 
 
 
+def digitar(coluna, linha, texto, pausa_ms):
+    lcd.move_to(coluna, linha)
+
+    for caractere in texto:
+        lcd.putstr(caractere)
+        time.sleep_ms(pausa_ms)
+
+
+def animacao_inicial():
+    # Apresentacao do grupo: cerca de 3 segundos no total.
+    lcd.clear()
+    digitar(5, 0, "GRUPO", 60)
+    digitar(3, 1, "DEBUGGERS", 60)
+    time.sleep_ms(800)
+
+    lcd.clear()
+    digitar(0, 0, "VINHERIA AGNELLO", 25)
+    digitar(1, 1, "ESP32 MONITOR", 25)
+    time.sleep_ms(800)
+
+
+def receber_limites(mensagem):
+    global luz_minima, luz_maxima, ultimo_limite_recebido
+
+    # A mensagem retida chega de novo a cada reconexao.
+    if mensagem == ultimo_limite_recebido:
+        return
+
+    try:
+        dados = json.loads(mensagem.decode())
+        faixa = dados.get("luminosidade_bruta") if isinstance(dados, dict) else None
+
+        if not isinstance(faixa, dict):
+            print("Limites sem a faixa de luminosidade.")
+            return
+
+        minimo = faixa.get("minimo")
+        maximo = faixa.get("maximo")
+
+        if type(minimo) is not int or type(maximo) is not int:
+            print("Limites do LDR precisam ser inteiros.")
+            return
+
+        if not 0 <= minimo < maximo <= 4095:
+            print("Limites do LDR rejeitados:", minimo, maximo)
+            return
+
+        luz_minima = minimo
+        luz_maxima = maximo
+        ultimo_limite_recebido = mensagem
+        print("Faixa do LDR da dashboard:", luz_minima, "-", luz_maxima)
+
+    except (ValueError, TypeError):
+        print("Limites invalidos:", mensagem)
+
+
 def atualizar_alerta():
     if not alertas_ativos:
         led_alerta.value(0)
@@ -156,6 +212,10 @@ def receber_mensagem(topico, mensagem):
         except ValueError:
             pass
         print("Atuador confirmou brilho de:", mensagem.decode(), "%")
+        return
+
+    if topico == TOPICO_LIMITES:
+        receber_limites(mensagem)
         return
 
     if topico != TOPICO_ALERTAS:
@@ -204,7 +264,12 @@ wifi = network.WLAN(network.STA_IF)
 wifi.active(True)
 wifi.connect("Wokwi-GUEST", "")
 
+# Conecta ao Wi-Fi enquanto a animacao inicial roda
 print("Conectando ao Wi-Fi...")
+animacao_inicial()
+lcd.clear()
+lcd.move_to(0, 0)
+lcd.putstr("Conectando WiFi")
 inicio = time.ticks_ms()
 
 while not wifi.isconnected():
@@ -228,6 +293,7 @@ def conectar_mqtt():
             cliente.connect()
             cliente.subscribe(TOPICO_ESTADO)
             cliente.subscribe(TOPICO_ALERTAS)
+            cliente.subscribe(TOPICO_LIMITES)
             print("MQTT conectado! Escutando confirmacoes e alertas.")
             return
 
@@ -267,10 +333,10 @@ while True:
     luminosidade_lcd = leitura
     print("Leitura do LDR:", leitura)
 
-    if leitura > 2500:
+    if leitura > luz_maxima:
         brilho = 100
         print("Pouca luz: aumentando a lampada.")
-    elif leitura < 1000:
+    elif leitura < luz_minima:
         brilho = 0
         print("Muita luz: apagando a lampada.")
     else:

@@ -16,7 +16,9 @@ A montagem física do hands-on ainda está pendente. A dashboard pode ser aprimo
 | `dashboard/styles.css` | Aparência, responsividade e componentes visuais |
 | `dashboard/app.js` | Comportamento da aplicação e eventos da interface |
 | `dashboard/core.js` | Lógica compartilhada e integração HTTP/API |
-| `dashboard/marca.svg` | Identidade visual utilizada pela dashboard |
+| `dashboard/marca.svg` | Ícone da aba do navegador |
+| `dashboard/taca.png` | Taça de vinho do logo na barra lateral |
+| `dashboard/Mikalea.ttf`, `dashboard/CocoBikerRegularTrial.ttf` | Fontes do logo "Agnello" e da assinatura "DEBUGGERS". A CocoBiker é versão *trial*: serve para o trabalho acadêmico, não para uso comercial |
 
 Antes de mover funções entre `app.js` e `core.js`, verifique suas referências reais no projeto.
 
@@ -27,7 +29,9 @@ Antes de mover funções entre `app.js` e `core.js`, verifique suas referências
 - Gráficos e consultas de histórico via FIWARE/STH-Comet.
 - Controle da iluminação em **modo automático** e **modo manual**.
 - Envio do brilho desejado e apresentação do **estado confirmado pelo atuador**, não apenas do valor solicitado.
-- Configuração de limites ambientais.
+- Configuração de limites ambientais, com validação imediata (mínimo menor que o máximo) e aviso de envio aos ESPs.
+- Painel "Correções indicadas pelo ESP atuador": decisões confirmadas pelo ESP ou, sem resposta, previstas pela dashboard; status online do Monitor e do Atuador; origem dos limites.
+- Botão "Verificar serviços" na janela de conexão (usa `GET /status`).
 - Listagem e gerenciamento de alertas.
 - Recursos de administração FIWARE já desenvolvidos (entidades, assinaturas, IoT Agent e demais seções existentes).
 
@@ -86,7 +90,8 @@ A dashboard **não deve presumir** que o ESP32 aplicou um comando só porque a c
 - [ ] Histórico e gráficos funcionam com dados disponíveis.
 - [ ] Controle manual envia comandos e mostra estado confirmado.
 - [ ] Modo automático funciona sem ser sobrescrito pela interface.
-- [ ] Alterações de limites continuam sendo persistidas pelo backend.
+- [ ] Alterações de limites continuam sendo persistidas pelo backend e chegam aos ESPs.
+- [ ] Painel de atuação ambiental mostra "Confirmado pelo ESP" com o Atuador ligado.
 - [ ] Alertas continuam aparecendo e mudando de estado.
 - [ ] Seções administrativas FIWARE continuam operacionais.
 - [ ] Interface permanece utilizável em telas menores.

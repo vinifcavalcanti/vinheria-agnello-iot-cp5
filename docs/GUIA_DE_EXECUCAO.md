@@ -98,12 +98,30 @@ Se um Wokwi ficar aberto em segundo plano e perder a conexão MQTT, confira os l
 - [ ] FastAPI responde em `/sensores` com dados do FIWARE.
 - [ ] Monitor publica as leituras; LCD apresenta os valores.
 - [ ] Atuador recebe comandos MQTT; LED PWM e LCD refletem o estado.
+- [ ] Atuador alterna as telas de iluminação, temperatura, umidade e luz, sem `*` no fim da segunda linha (limites da dashboard recebidos).
+- [ ] O botão "Verificar serviços" (em Configurar conexão) mostra API, FIWARE, MQTT e limites em verde.
 - [ ] Dashboard mostra sensores e permite controle manual/automático.
 - [ ] Alarmes e histórico são testados com valores adequados ao ambiente.
 
 Se o Orion responder, mas a API der timeout, **confira primeiro `IP_SERVIDOR` e reinicie o Uvicorn**, antes de alterar contêineres. Consultas diretas ao Orion podem exigir os cabeçalhos `fiware-service: smart` e `fiware-servicepath: /`.
 
-## 8. Hands-on físico (pendente)
+## 8. Testar a atuação ambiental no Wokwi
+
+O DHT22 e o LDR do Wokwi permitem mudar os valores clicando no componente durante a simulação. Com o backend, os dois ESP32 e a dashboard rodando:
+
+1. **Inicialização:** o LCD do Atuador mostra "GRUPO DEBUGGERS" e "VINHERIA AGNELLO / ESP32 ATUADOR" (cerca de 3 s) e depois `Conectando WiFi` / `Conectando MQTT`.
+2. **Limites:** na dashboard, em *Limites & alertas*, salve temperatura 15–20 °C e umidade 50–80%. A mensagem deve ser "salvos no limites.json e enviados aos ESPs". O `*` some do LCD do Atuador.
+3. **Temperatura:** no DHT22 do Monitor, use 25 °C → `RESFRIAR` e LED vermelho piscando; 13 °C → `AQUECER`; 18 °C → `NORMAL` e LED apagado.
+4. **Umidade:** 45% → `UMIDIFICAR`; 90% → `DESUMIDIFICAR`; 65% → `NORMAL`.
+5. **Ambos fora da faixa:** o LED continua piscando e o LCD mostra as duas ações nas telas alternadas.
+6. **Iluminação:** com o LDR no escuro (ADC alto), o brilho vai a 100% e a tela de luz mostra `AUMENTAR LUZ`; com muita luz (ADC baixo), 0% e `DIMINUIR LUZ`.
+7. **Modo manual:** aplique 25% pela dashboard. O Atuador mostra `Modo: Manual` / `Brilho: 25%` e ignora o Monitor. Volte ao automático em seguida.
+8. **Mudança de limites ao vivo:** com 18 °C, mude a faixa para 20–30 °C. A tela muda para `AQUECER` sem reiniciar o ESP.
+9. **Monitor desligado:** pare a simulação do Monitor. Após cerca de 15 s, o Atuador mostra `DADOS ANTIGOS` e apaga o LED vermelho.
+10. **Reconexão:** reinicie só o Atuador. Ele deve receber os limites retidos na hora (sem `*`) e voltar a decidir assim que o Monitor publicar.
+11. **Dashboard:** o painel "Correções indicadas pelo ESP atuador" mostra "Confirmado pelo ESP" com as mesmas ações do LCD.
+
+## 9. Hands-on físico (pendente)
 
 A simulação está pronta, mas a montagem precisa ser validada com as peças reais. Antes de ligar, compare o esquema `diagram.json` com o hardware, confira os níveis de tensão, resistores, alimentação do LCD e pinos de entrada/saída. Verifique também a rede Wi-Fi real: a rede `Wokwi-GUEST` existe no simulador e **não será utilizada no ESP32 físico**.
 

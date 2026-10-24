@@ -60,15 +60,54 @@ Publica leituras de temperatura, umidade e luminosidade; calcula comandos de bri
 
 | Leitura LDR (ADC) | Brilho automático |
 |---|---|
-| Maior que 2500 | 100% |
-| Menor que 1000 | 0% |
-| Entre esses limites | 50% |
+| Maior que o máximo da faixa de luminosidade | 100% |
+| Menor que o mínimo da faixa de luminosidade | 0% |
+| Dentro da faixa | 50% |
+
+A faixa vem da dashboard (`luminosidade_bruta` em `limites.json`), recebida pelo tópico de limites. Até essa mensagem chegar, o Monitor usa o padrão **1000–2500**, igual ao `limites.json` do repositório.
 
 Na montagem física, **valide o sentido da leitura ADC**: na ligação do Wokwi usada nos testes, valores maiores correspondiam a menos luz ambiente. O comportamento pode mudar conforme o divisor resistivo e o módulo LDR reais.
 
 ## 2. ESP32 Atuador
 
-Também usa MicroPython. O LED simulado é acionado em **PWM no GPIO 26** (com resistor), e o LCD I2C utiliza SDA 21 / SCL 22. O atuador recebe comandos automáticos e manuais, aplica o brilho e publica confirmação de estado. O LCD apresenta modo de operação e brilho.
+Também usa MicroPython.
+
+| Componente | GPIO / conexão |
+|---|---|
+| LED amarelo de iluminação (PWM) | GPIO 26, com resistor de 220 Ω |
+| LED vermelho de atuação ambiental | GPIO 27, com resistor de 220 Ω |
+| LCD 16x2 I2C | SDA 21, SCL 22 (endereço `0x27`) |
+
+**Iluminação (sem mudança de comportamento):** recebe comandos automáticos do Monitor e manuais da dashboard, aplica o brilho por PWM e publica as confirmações. No modo manual, os comandos automáticos são ignorados.
+
+**Atuação ambiental simbólica:** o Atuador assina as leituras que o Monitor já envia ao FIWARE e compara com os limites da dashboard. Ele **indica** a correção necessária, mas **não altera fisicamente a temperatura nem a umidade**, pois não há aquecedor, resfriador ou umidificador na montagem.
+
+| Sensor | Abaixo do mínimo | Dentro da faixa | Acima do máximo |
+|---|---|---|---|
+| Temperatura | `AQUECER` | `NORMAL` | `RESFRIAR` |
+| Umidade | `UMIDIFICAR` | `NORMAL` | `DESUMIDIFICAR` |
+| Luminosidade (ADC) | `DIMINUIR LUZ` (muita luz) | `LUZ NORMAL` | `AUMENTAR LUZ` (pouca luz) |
+
+Os próprios limites contam como dentro da faixa. Outros estados:
+
+- `AGUARDANDO`: nenhuma leitura recebida desde que o ESP ligou.
+- `DADOS ANTIGOS`: a última leitura tem mais de 15 s (Monitor desligado ou sem rede). Nenhuma ação é indicada.
+- `DESATIVADO`: o sensor está com o alerta desligado na dashboard.
+
+**LED vermelho:** pisca (500 ms aceso / 500 ms apagado) quando temperatura ou umidade pede correção. Fica apagado quando tudo está normal, sem leituras recentes ou durante a reconexão MQTT. A luminosidade não aciona o LED, porque a luz já é corrigida pelo LED amarelo.
+
+**LCD:** ao ligar, mostra a apresentação "GRUPO DEBUGGERS" e "VINHERIA AGNELLO / ESP32 ATUADOR" (cerca de 3 s, enquanto o Wi-Fi conecta). Depois alterna quatro telas a cada 3 s:
+
+| Tela | Linha 1 | Linha 2 |
+|---|---|---|
+| Iluminação | `Modo: Automatico` / `Modo: Manual` | `Brilho: 50%` (brilho realmente aplicado) |
+| Temperatura | `Temp: 25.0 C` | ação ou estado |
+| Umidade | `Umid: 65%` | ação ou estado |
+| Luminosidade | `Luz: 1800 ADC` | ação ou estado |
+
+Um `*` no fim da segunda linha indica que o Atuador ainda usa os **limites padrão** do firmware (cópia do `limites.json` do repositório: temperatura 10–30 °C, umidade 50–80%, LDR 1000–2500), porque a configuração da dashboard ainda não chegou. O LCD também mostra `Conectando WiFi`, `Conectando MQTT` e `Reconect. MQTT` com o número da tentativa.
+
+**Resposta de estado:** a mensagem em `lampada/controle/estado` ganhou o campo opcional `ambiente`, com as decisões, o estado do LED vermelho e a origem dos limites (`sincronizados` ou `padrao`). Os campos `modo` e `brilho` não mudaram.
 
 ## 3. Tópicos MQTT usados
 
@@ -81,6 +120,11 @@ Também usa MicroPython. O LED simulado é acionado em **PWM no GPIO 26** (com r
 | `cp5/agnello-8ea14fa3/lampada/estado` | Atuador → Monitor: confirmação do brilho aplicado |
 | `cp5/agnello-8ea14fa3/lampada/controle/estado` | Atuador → Backend/dashboard: modo e brilho confirmados |
 | `cp5/agnello-8ea14fa3/monitor/alertas` | Backend → Monitor: acionamento de alertas |
+| `cp5/agnello-8ea14fa3/config/limites` | Backend → Monitor e Atuador: limites da dashboard em JSON, publicados com **retain** |
+
+O Atuador também **assina** `/ul/TEF/monitor001/attrs` para receber as leituras ambientais. Assim, nenhuma mensagem nova foi criada no Monitor e o IoT Agent continua recebendo exatamente o mesmo conteúdo.
+
+**Sincronização dos limites:** o backend publica o conteúdo do `limites.json` ao iniciar e a cada `PUT /limites`. Como a mensagem fica retida no broker (o Mosquitto está com `persistence true`), um ESP que liga ou reconecta recebe a configuração atual na hora, sem precisar reiniciar. Os ESPs rejeitam faixas inválidas, mantêm a configuração anterior e ignoram a mesma mensagem recebida de novo. Se o backend nunca tiver publicado, os ESPs ficam com o padrão do firmware e o Atuador mostra `*` no LCD.
 
 Os payloads dependem do tópico: as telemetrias UltraLight usam campos compactos (por exemplo, `t|...|h|...` e `l|...`), enquanto os comandos/estados de controle podem utilizar JSON. **Consulte os `main.py` para o formato exato antes de alterar um produtor ou consumidor.**
 
@@ -113,7 +157,11 @@ Evite excluir/recriar essas entidades sem verificar seus relacionamentos, provis
 
 O backend fica em `backend/main.py`. As configurações de limites são mantidas em `backend/limites.json` usando caminho relativo ao próprio script. A dashboard estática fica em `dashboard/` e usa requisições HTTP para a API. As telas e chamadas podem ser identificadas em `dashboard/app.js` e `dashboard/core.js`.
 
-**Endpoints confirmados nas etapas de desenvolvimento:** `/`, `/docs`, `/sensores`, `/atuador/estado`, `/alertas` (além de rotas para histórico, limites e administração FIWARE). Para a lista autoritativa e atualizada, abra `http://127.0.0.1:8000/docs` com o backend em execução.
+**Endpoints confirmados nas etapas de desenvolvimento:** `/`, `/docs`, `/sensores`, `/atuador/estado`, `/alertas`, `/status` (além de rotas para histórico, limites e administração FIWARE).
+
+- `PUT /limites` salva o arquivo e publica os limites no MQTT. A resposta traz `"sincronizado": true/false`. Se o broker estiver fora, o arquivo é salvo mesmo assim e a dashboard avisa que os ESPs mantêm a configuração anterior.
+- O mínimo precisa ser **menor** que o máximo. Faixas com mínimo igual ao máximo são recusadas pela dashboard, pela API e pelos ESPs.
+- `GET /status` faz um diagnóstico rápido do FIWARE (Orion), do broker MQTT e do `limites.json`. A dashboard usa essa rota no botão "Verificar serviços". Para a lista autoritativa e atualizada, abra `http://127.0.0.1:8000/docs` com o backend em execução.
 
 ## 6. Pontos críticos na adaptação para hardware real
 

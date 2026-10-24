@@ -15,6 +15,7 @@ O **software desenvolvido nesta etapa está concluído e foi validado no ambient
 |---|---|---|
 | ESP32 Monitor (Wokwi) | Concluído em simulação | DHT22, LDR, LED de alerta, buzzer, LCD I2C, publicação MQTT e comandos automáticos |
 | ESP32 Atuador (Wokwi) | Concluído em simulação | LED PWM, modos automático/manual, confirmação de estado e LCD I2C |
+| Atuação ambiental simbólica | Implementada; falta validar no Wokwi | LED vermelho no GPIO 27, decisões AQUECER/RESFRIAR/UMIDIFICAR/DESUMIDIFICAR, 4 telas no LCD, limites sincronizados por MQTT (retain). Testada em simulação local; ver o guia de execução, seção 8 |
 | Comunicação MQTT | Validada em testes | Comandos de brilho, estados e alertas; ocorreram reconexões intermitentes no Wokwi |
 | FIWARE na AWS | Funcionando nos testes realizados | Orion, IoT Agent UL, STH-Comet, Mosquitto e dois MongoDBs em Docker |
 | Backend FastAPI | Validado localmente | Inicialização de `backend/main.py`; consultas de sensores ao Orion pelo IP atualizado |

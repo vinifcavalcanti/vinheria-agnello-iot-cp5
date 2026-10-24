@@ -10,12 +10,20 @@
       "left": 0,
       "attrs": { "env": "micropython-20260406-v1.28.0" }
     },
-    { "type": "wokwi-led", "id": "led1", "top": -42, "left": -159.4, "attrs": { "color": "red" } },
+    { "type": "wokwi-led", "id": "led1", "top": -42, "left": -159.4, "attrs": { "color": "yellow" } },
+    { "type": "wokwi-led", "id": "led2", "top": -42, "left": -217, "attrs": { "color": "red" } },
     {
       "type": "wokwi-resistor",
       "id": "r1",
       "top": 71.15,
       "left": -134.4,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": 90.35,
+      "left": -192,
       "attrs": { "value": "220" }
     },
     {
@@ -32,6 +40,9 @@
     [ "esp:26", "r1:2", "green", [ "h0" ] ],
     [ "r1:1", "led1:A", "green", [ "v0" ] ],
     [ "led1:C", "esp:GND.1", "green", [ "v0" ] ],
+    [ "esp:27", "r2:2", "red", [ "h0" ] ],
+    [ "r2:1", "led2:A", "red", [ "v0" ] ],
+    [ "led2:C", "esp:GND.1", "black", [ "v0" ] ],
     [ "lcd1:VCC", "esp:5V", "red", [ "h-28.8", "v163.3", "h76.8", "v134.4" ] ],
     [ "lcd1:GND", "esp:GND.1", "black", [ "h-38.4", "v163.2", "h96", "v134.4" ] ],
     [ "lcd1:SDA", "esp:21", "green", [ "h-19.2", "v134.6", "h86.4", "v0", "h134.4", "v48" ] ],
