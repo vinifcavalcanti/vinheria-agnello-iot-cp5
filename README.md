@@ -66,11 +66,12 @@ O monitor realiza leituras ambientais, publica os dados via MQTT e emite alertas
 ### ESP32 Atuador
 
 - ESP32 com MicroPython.
-- LED controlado por PWM.
-- Resistor de proteção.
+- LED amarelo de iluminação controlado por PWM (GPIO 26).
+- LED vermelho de atuação ambiental (GPIO 27).
+- Um resistor de proteção para cada LED.
 - Display LCD 16x2 com comunicação I2C.
 
-O atuador recebe comandos de intensidade luminosa, aplica o brilho solicitado e publica confirmações de estado.
+O atuador recebe comandos de intensidade luminosa, aplica o brilho solicitado e publica confirmações de estado. Ele também compara as leituras do monitor com os limites da dashboard e indica, no LCD e no LED vermelho, a correção ambiental necessária.
 
 ## 💡 Controle inteligente da iluminação
 
@@ -81,6 +82,22 @@ O sistema oferece dois modos de operação:
 **Manual:** o usuário define o brilho diretamente pela dashboard.
 
 O atuador confirma o brilho aplicado por MQTT, permitindo sincronizar as informações exibidas na interface e nos dispositivos.
+
+## 🌡️ Atuação ambiental simbólica
+
+O ESP32 Atuador recebe as leituras do monitor e os limites configurados na dashboard. Com isso, identifica qual correção seria necessária:
+
+| Condição | Indicação no LCD |
+|---|---|
+| Temperatura abaixo / acima da faixa | `AQUECER` / `RESFRIAR` |
+| Umidade abaixo / acima da faixa | `UMIDIFICAR` / `DESUMIDIFICAR` |
+| Pouca / muita luz (LDR) | `AUMENTAR LUZ` / `DIMINUIR LUZ` |
+
+O LED vermelho pisca enquanto temperatura ou umidade estiverem fora da faixa.
+
+> **A atuação é simbólica:** o sistema **indica** a ação corretiva, mas **não altera fisicamente a temperatura nem a umidade**. A montagem não possui aquecedor, resfriador, umidificador ou desumidificador.
+
+Os limites salvos na dashboard são enviados aos dois ESP32 pelo MQTT e aplicados sem reiniciar. Detalhes em [`docs/ARQUITETURA_E_INTEGRACAO.md`](docs/ARQUITETURA_E_INTEGRACAO.md).
 
 ## 🚨 Alertas e monitoramento
 
@@ -135,7 +152,9 @@ vinheria-agnello-iot-cp5/
 │   ├── app.js
 │   ├── core.js
 │   ├── styles.css
-│   └── marca.svg
+│   ├── marca.svg
+│   ├── taca.png
+│   └── *.ttf (fontes do logo)
 ├── esp32-monitor/
 │   ├── main.py
 │   ├── diagram.json

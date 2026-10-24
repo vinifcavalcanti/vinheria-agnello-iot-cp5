@@ -73,11 +73,13 @@ export function validateAlertData(data) {
   return data;
 }
 
+const LIMIT_NAMES = { temperatura: 'temperatura', umidade: 'umidade', luminosidade_bruta: 'luminosidade' };
+
 export function validateLimits(data) {
   for (const key of ['temperatura', 'umidade', 'luminosidade_bruta']) {
     const item = data[key];
     if (!item || typeof item.ativo !== 'boolean' || !Number.isFinite(item.minimo) || !Number.isFinite(item.maximo)) throw new Error('Preencha todos os limites com números válidos.');
-    if (item.minimo > item.maximo) throw new Error(`O mínimo de ${key} não pode ser maior que o máximo.`);
+    if (item.minimo >= item.maximo) throw new Error(`O mínimo de ${LIMIT_NAMES[key]} precisa ser menor que o máximo.`);
     if (key === 'umidade' && (item.minimo < 0 || item.maximo > 100)) throw new Error('A umidade deve ficar entre 0 e 100%.');
     if (key === 'luminosidade_bruta' && (!Number.isInteger(item.minimo) || !Number.isInteger(item.maximo) || item.minimo < 0 || item.maximo > 4095)) throw new Error('Use números inteiros de 0 a 4095 para o LDR.');
   }
@@ -114,4 +116,29 @@ export function csvHistory(records) {
     return `"${text.replaceAll('"', '""')}"`;
   };
   return '\ufeff' + ['data_iso;valor', ...records.map(row => `${cell(row.data)};${cell(row.valor)}`)].join('\r\n');
+}
+
+// Atuação simbólica: mesma regra do ESP atuador. Indica a correção,
+// não altera o ambiente. No LDR, ADC maior significa menos luz.
+export const ACTIONS = {
+  temperatura: ['AQUECER', 'RESFRIAR', 'NORMAL'],
+  umidade: ['UMIDIFICAR', 'DESUMIDIFICAR', 'NORMAL'],
+  luminosidade: ['DIMINUIR LUZ', 'AUMENTAR LUZ', 'LUZ NORMAL']
+};
+const ACTION_FIELDS = { temperatura: 'temperatura', umidade: 'umidade', luminosidade: 'luminosidade_bruta' };
+
+export function predictActions(sensores) {
+  const result = {};
+  for (const [key, field] of Object.entries(ACTION_FIELDS)) {
+    const item = sensores?.[field];
+    const [below, above, normal] = ACTIONS[key];
+    result[key] = !item ? 'AGUARDANDO' : item.estado === 'desativado' ? 'DESATIVADO' : item.valor < item.minimo ? below : item.valor > item.maximo ? above : normal;
+  }
+  // O LED vermelho do atuador considera apenas temperatura e umidade.
+  result.led_atuacao = isCorrective(result.temperatura) || isCorrective(result.umidade);
+  return result;
+}
+
+export function isCorrective(action) {
+  return Object.values(ACTIONS).some(list => list.slice(0, 2).includes(action));
 }

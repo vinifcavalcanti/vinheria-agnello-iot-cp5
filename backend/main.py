@@ -10,7 +10,7 @@ import json
 import paho.mqtt.client as mqtt
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
-from threading import Event
+from threading import Event, Thread
 from typing import Literal
 from pathlib import Path
 from pydantic import ConfigDict, model_validator
@@ -26,7 +26,7 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-IP_SERVIDOR = "54.237.148.216"
+IP_SERVIDOR = "98.81.197.236"
 ORION = f"http://{IP_SERVIDOR}:1026"
 
 CABECALHOS = {
@@ -906,7 +906,8 @@ class ComandoBrilho(BaseModel):
 
 def enviar_controle_mqtt(
     comando: dict,
-    topico: str = TOPICO_CONTROLE
+    topico: str = TOPICO_CONTROLE,
+    retain: bool = False
 ):
     cliente_mqtt = mqtt.Client(
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2
@@ -921,7 +922,7 @@ def enviar_controle_mqtt(
             topico,
             payload=json.dumps(comando),
             qos=1,
-            retain=False
+            retain=retain
         )
 
         envio.wait_for_publish(timeout=5)
@@ -970,6 +971,37 @@ def ativar_modo_automatico():
 TOPICO_CONTROLE_ESTADO = (
     "cp5/agnello-8ea14fa3/lampada/controle/estado"
 )
+
+# Decisões que o atuador mostra no LCD (atuação simbólica).
+ESTADOS_AMBIENTE = {
+    "temperatura": {"AQUECER", "RESFRIAR", "NORMAL"},
+    "umidade": {"UMIDIFICAR", "DESUMIDIFICAR", "NORMAL"},
+    "luminosidade": {"AUMENTAR LUZ", "DIMINUIR LUZ", "LUZ NORMAL"}
+}
+ESTADOS_SEM_DECISAO = {"AGUARDANDO", "DADOS ANTIGOS", "DESATIVADO"}
+
+
+def validar_ambiente(ambiente):
+    # Campo opcional: firmwares antigos respondem sem ele.
+    if not isinstance(ambiente, dict):
+        return None
+
+    validado = {}
+
+    for campo, permitidos in ESTADOS_AMBIENTE.items():
+        valor = ambiente.get(campo)
+        if valor not in permitidos and valor not in ESTADOS_SEM_DECISAO:
+            return None
+        validado[campo] = valor
+
+    if type(ambiente.get("led_atuacao")) is not bool:
+        return None
+    if ambiente.get("limites") not in ("sincronizados", "padrao"):
+        return None
+
+    validado["led_atuacao"] = ambiente["led_atuacao"]
+    validado["limites"] = ambiente["limites"]
+    return validado
 
 
 @app.get("/atuador/estado")
@@ -1028,6 +1060,11 @@ def consultar_estado_controle():
                 "brilho": brilho,
                 "recebido_em": datetime.now(timezone.utc).isoformat()
             }
+
+            ambiente = validar_ambiente(dados.get("ambiente"))
+            if ambiente is not None:
+                resultado["estado"]["ambiente"] = ambiente
+
             resposta_recebida.set()
 
         except (ValueError, UnicodeError):
@@ -1129,9 +1166,9 @@ class FaixaLimite(BaseModel):
 
     @model_validator(mode="after")
     def validar_ordem(self):
-        if self.minimo > self.maximo:
+        if self.minimo >= self.maximo:
             raise ValueError(
-                "O mínimo não pode ser maior que o máximo."
+                "O mínimo precisa ser menor que o máximo."
             )
         return self
 
@@ -1152,6 +1189,38 @@ class ConfiguracaoLimites(BaseModel):
     temperatura: FaixaLimite
     umidade: FaixaUmidade
     luminosidade_bruta: FaixaLuminosidade
+
+
+# Os ESP32 assinam este tópico. Com retain, um ESP que se reconecta
+# recebe imediatamente a configuração atual.
+TOPICO_LIMITES = "cp5/agnello-8ea14fa3/config/limites"
+
+
+def publicar_limites(limites: dict) -> bool:
+    try:
+        enviar_controle_mqtt(limites, topico=TOPICO_LIMITES, retain=True)
+        return True
+    except HTTPException:
+        return False
+
+
+def publicar_limites_salvos():
+    try:
+        limites = ConfiguracaoLimites.model_validate(consultar_limites())
+    except (HTTPException, ValidationError):
+        print("[limites] limites.json inválido; nada foi publicado.")
+        return
+
+    if publicar_limites(limites.model_dump()):
+        print("[limites] Configuração publicada no MQTT (retain).")
+    else:
+        print("[limites] Broker MQTT indisponível; os ESPs usam a última configuração retida ou o padrão do firmware.")
+
+
+@app.on_event("startup")
+def sincronizar_limites_ao_iniciar():
+    # Em segundo plano: um broker fora do ar não atrasa a API.
+    Thread(target=publicar_limites_salvos, daemon=True).start()
 
 
 @app.put("/limites")
@@ -1190,9 +1259,16 @@ def atualizar_limites(dados: ConfiguracaoLimites):
             except OSError:
                 pass
 
+    sincronizado = publicar_limites(dados.model_dump())
+
     return {
-        "mensagem": "Limites atualizados.",
-        "limites": dados.model_dump()
+        "mensagem": (
+            "Limites atualizados e enviados aos ESPs."
+            if sincronizado
+            else "Limites salvos, mas o envio pelo MQTT falhou."
+        ),
+        "limites": dados.model_dump(),
+        "sincronizado": sincronizado
     }
 
 @app.get("/alertas")
@@ -1248,4 +1324,49 @@ def consultar_alertas():
         "alertas": alertas,
         "sensores": detalhes,
         "ultima_atualizacao": leituras["ultima_atualizacao"]
+    }
+
+
+@app.get("/status")
+def consultar_status():
+    servicos = {}
+
+    try:
+        resposta = requests.get(f"{ORION}/version", timeout=4)
+        resposta.raise_for_status()
+        servicos["fiware"] = {"ok": True, "detalhe": "Orion respondeu."}
+    except requests.exceptions.RequestException:
+        servicos["fiware"] = {
+            "ok": False,
+            "detalhe": "Orion não respondeu. Confira o IP, a EC2 ou o filtro da rede."
+        }
+
+    cliente_teste = mqtt.Client(
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2
+    )
+    cliente_teste.connect_timeout = 4
+
+    try:
+        cliente_teste.connect(IP_SERVIDOR, 1883, keepalive=10)
+        cliente_teste.disconnect()
+        servicos["mqtt"] = {"ok": True, "detalhe": "Broker aceitou a conexão."}
+    except (OSError, ValueError):
+        servicos["mqtt"] = {
+            "ok": False,
+            "detalhe": "Broker MQTT inacessível na porta 1883."
+        }
+
+    try:
+        ConfiguracaoLimites.model_validate(consultar_limites())
+        servicos["limites"] = {"ok": True, "detalhe": "limites.json válido."}
+    except (HTTPException, ValidationError):
+        servicos["limites"] = {
+            "ok": False,
+            "detalhe": "limites.json ausente ou inválido."
+        }
+
+    return {
+        "servidor": IP_SERVIDOR,
+        "servicos": servicos,
+        "verificado_em": datetime.now(timezone.utc).isoformat()
     }
