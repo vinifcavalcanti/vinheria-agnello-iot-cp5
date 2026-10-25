@@ -2,9 +2,21 @@
 export const SENSOR_INFO = {
   temperatura: { name: 'Temperatura', unit: '°C', icon: 'thermometer', decimals: 1 },
   umidade: { name: 'Umidade', unit: '%', icon: 'drop', decimals: 1 },
-  luminosidade: { name: 'Luminosidade', unit: 'ADC', icon: 'sun', decimals: 0 },
+  // Exibida em % relativa; a API, os limites e o histórico continuam em ADC.
+  luminosidade: { name: 'Luminosidade', unit: '%', icon: 'sun', decimals: 0 },
   brilho: { name: 'Brilho da lâmpada', unit: '%', icon: 'bulb', decimals: 0 }
 };
+
+// Índice relativo de luz só para exibição (não é lux). ADC maior = menos luz:
+// 0 ADC -> 100% (muito claro), 4095 ADC -> 0% (escuro).
+export function luminosityPercent(adc) {
+  return Math.max(0, Math.min(100, Math.round((4095 - adc) * 100 / 4095)));
+}
+
+// Valor como deve aparecer na interface (converte só a luminosidade).
+export function displayValue(sensor, value) {
+  return sensor === 'luminosidade' || sensor === 'luminosidade_bruta' ? luminosityPercent(value) : value;
+}
 
 export function normalizeBase(input) {
   const url = new URL(String(input).trim());
@@ -109,12 +121,16 @@ export function resourceMutation(resource, action, item) {
 }
 
 // Compatibilidade com Excel em português e proteção contra fórmulas em células.
-export function csvHistory(records) {
+export function csvHistory(records, sensor) {
   const cell = value => {
     let text = String(value ?? '');
     if (/^[=+@-]/.test(text)) text = `'${text}`;
     return `"${text.replaceAll('"', '""')}"`;
   };
+  // Luminosidade: mantém o ADC original e acrescenta a % relativa.
+  if (sensor === 'luminosidade') {
+    return '\ufeff' + ['data_iso;valor_adc;luminosidade_percentual', ...records.map(row => `${cell(row.data)};${cell(row.valor)};${cell(luminosityPercent(row.valor))}`)].join('\r\n');
+  }
   return '\ufeff' + ['data_iso;valor', ...records.map(row => `${cell(row.data)};${cell(row.valor)}`)].join('\r\n');
 }
 

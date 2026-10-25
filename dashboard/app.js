@@ -1,4 +1,4 @@
-import { ApiClient, SENSOR_INFO, normalizeBase, isFresh, validateAlertData, validateLimits, unwrapList, resourceMutation, csvHistory, predictActions, isCorrective } from './core.js';
+import { ApiClient, SENSOR_INFO, normalizeBase, isFresh, validateAlertData, validateLimits, unwrapList, resourceMutation, csvHistory, predictActions, isCorrective, luminosityPercent, displayValue } from './core.js';
 
 const $ = id => document.getElementById(id);
 const paths = {
@@ -46,7 +46,7 @@ const state = {
   epoch: 0, alertGeneration: 0, busyAlert: false, stoppingAlerts: false, pollTimer: null, polling: false,
   chartEpoch: { overview: 0, history: 0 }, graphURLs: {}, resourceEpoch: 0, deviceEpoch: 0, historyEpoch: 0,
   editor: null, confirmation: null, previousAlerts: null, lastChart: 0, commandVersion: 0, commandPending: false, actuatorEpoch: 0,
-  limitsSync: null
+  limitsSync: null, previousActions: null
 };
 let graphQueue = Promise.resolve();
 
@@ -133,20 +133,26 @@ function renderMonitor() {
   $('last-reading').textContent = `Última leitura: ${data ? time(data.ultima_atualizacao) : '—'} · Brasília`;
   for (const key of ['temperatura', 'umidade', 'luminosidade_bruta']) {
     const item = data?.sensores[key]; const digits = key === 'luminosidade_bruta' ? 0 : 1;
-    $(`value-${key}`).textContent = item ? format(item.valor, digits) : '—';
+    // Luminosidade: valor em % relativa; leitura e faixa continuam em ADC.
+    $(`value-${key}`).textContent = item ? format(displayValue(key, item.valor), digits) : '—';
     const badge = $(`state-${key}`);
     badge.textContent = !item ? 'Sem leitura' : hasError || !fresh ? 'Última leitura' : item.estado === 'normal' ? 'Dentro da faixa' : item.estado === 'desativado' ? 'Alerta desativado' : 'Fora da faixa';
     badge.className = `pill ${!item ? '' : hasError || !fresh ? 'warning' : item.estado === 'normal' ? 'good' : item.estado === 'fora_da_faixa' ? 'bad' : ''}`;
-    $(`range-${key}`).textContent = item ? `Faixa: ${format(item.minimo, digits)}–${format(item.maximo, digits)}${key === 'temperatura' ? ' °C' : key === 'umidade' ? '%' : ' ADC'}` : 'Faixa não carregada';
+    $(`range-${key}`).textContent = !item ? 'Faixa não carregada' : key === 'luminosidade_bruta'
+      ? `ADC ${format(item.valor)} · faixa ${format(item.minimo)}–${format(item.maximo)}`
+      : `Faixa: ${format(item.minimo, digits)}–${format(item.maximo, digits)}${key === 'temperatura' ? ' °C' : '%'}`;
     $(`metric-${key}`).classList.toggle('alert', !!item && fresh && !hasError && item.estado === 'fora_da_faixa');
-    const scale = key === 'luminosidade_bruta' ? 4095 : key === 'umidade' ? 100 : 80;
-    $(`track-${key}`).style.width = item ? `${Math.max(0, Math.min(100, item.valor / scale * 100))}%` : '0%';
+    const scale = key === 'luminosidade_bruta' ? 100 : key === 'umidade' ? 100 : 80;
+    $(`track-${key}`).style.width = item ? `${Math.max(0, Math.min(100, displayValue(key, item.valor) / scale * 100))}%` : '0%';
   }
   $('alert-count').textContent = data ? String(data.alertas.length) : '—';
   if (hasError || !fresh) $('alerts-list').innerHTML = emptyHTML(data ? 'Leituras sem atualização' : 'Aguardando leituras', 'Os valores precisam estar atualizados para o envio automático de alertas.', 'wifi');
   else if (!data.alertas.length) $('alerts-list').innerHTML = emptyHTML('Tudo dentro dos limites', 'Nenhum sensor com alerta ativo nesta leitura.', 'shield', true);
   else $('alerts-list').innerHTML = data.alertas.map(key => {
     const field = key === 'luminosidade' ? 'luminosidade_bruta' : key, item = data.sensores[field], info = SENSOR_INFO[key];
+    // Luminosidade: a comparação é em ADC e a escala é invertida
+    // (ADC acima do máximo = pouca luz), então o rótulo descreve a luz.
+    if (key === 'luminosidade') return `<div class="alert-item"><span>${icon(info.icon)}</span><div><strong>${item.valor > item.maximo ? 'Pouca luz no ambiente' : 'Muita luz no ambiente'}</strong><p>${luminosityPercent(item.valor)}% de luz · leitura ${format(item.valor)} ADC · faixa ${format(item.minimo)}–${format(item.maximo)} ADC</p></div></div>`;
     return `<div class="alert-item"><span>${icon(info.icon)}</span><div><strong>${escape(info.name)} ${item.valor > item.maximo ? 'acima do máximo' : 'abaixo do mínimo'}</strong><p>${format(item.valor, info.decimals)} ${info.unit} · faixa ${format(item.minimo, info.decimals)}–${format(item.maximo, info.decimals)} ${info.unit}</p></div></div>`;
   }).join('');
   if (data && fresh && !hasError) {
@@ -154,6 +160,13 @@ function renderMonitor() {
     if (state.previousAlerts !== signature) {
       if (state.previousAlerts !== null || data.alertas.length) activity(data.alertas.length ? `Fora da faixa: ${data.alertas.map(key => SENSOR_INFO[key].name).join(', ')}.` : 'Todos os sensores voltaram à faixa configurada.', data.alertas.length ? 'amber' : 'green');
       state.previousAlerts = signature;
+    }
+    // Leitura mudou a ação esperada: consulta o atuador logo (ele recebe a
+    // mesma leitura do monitor), sem esperar a consulta periódica de 15 s.
+    const actions = JSON.stringify(predictActions(data.sensores));
+    if (!state.demo && state.previousActions !== actions) {
+      if (state.previousActions !== null) setTimeout(() => { if (!state.commandPending) void queryActuator({ silent: true }); }, 2500);
+      state.previousActions = actions;
     }
   }
   renderAutomation(); renderActuation();
@@ -200,7 +213,9 @@ function renderActuation() {
   for (const key of ['temperatura', 'umidade', 'luminosidade']) {
     const action = env?.[key], item = alerts?.sensores?.[ACTION_FIELD[key]], info = SENSOR_INFO[key];
     $(`act-value-${key}`).textContent = action ? ACTION_LABEL[action] ?? action : '—';
-    $(`act-detail-${key}`).textContent = item ? `${format(item.valor, info.decimals)} ${info.unit} · faixa ${format(item.minimo, info.decimals)}–${format(item.maximo, info.decimals)} ${info.unit}` : 'Aguardando dados';
+    $(`act-detail-${key}`).textContent = !item ? 'Aguardando dados' : key === 'luminosidade'
+      ? `${luminosityPercent(item.valor)}% de luz · ${format(item.valor)} ADC · faixa ${format(item.minimo)}–${format(item.maximo)} ADC`
+      : `${format(item.valor, info.decimals)} ${info.unit} · faixa ${format(item.minimo, info.decimals)}–${format(item.maximo, info.decimals)} ${info.unit}`;
     $(`act-${key}`).className = `actuation-item ${!action ? '' : isCorrective(action) ? 'act-alert' : action.endsWith('NORMAL') ? 'act-ok' : 'act-warn'}`;
   }
   const led = env ? env.led_atuacao : null;
@@ -351,7 +366,7 @@ async function poll() {
 }
 
 function illustrativeChart(sensor) {
-  const rows = demoHistory(sensor), values = rows.map(r => r.valor), low = Math.min(...values), high = Math.max(...values);
+  const rows = demoHistory(sensor), values = rows.map(r => displayValue(sensor, r.valor)), low = Math.min(...values), high = Math.max(...values);
   const scale = high - low || 1;
   const points = values.map((value, i) => `${50 + i * 19.3},${205 - (value - low) / scale * 130}`).join(' ');
   const lines = [55, 105, 155, 205].map(y => `<line x1="50" y1="${y}" x2="625" y2="${y}" stroke="#eee7ec" stroke-dasharray="3 4"/>`).join('');
@@ -396,7 +411,7 @@ async function loadHistory() {
     if (epoch !== state.epoch || token !== state.historyEpoch) return;
     if (!Array.isArray(rows)) throw new Error('Formato de histórico inesperado.');
     state.history = rows; state.historyLoaded = true;
-    $('history-table').innerHTML = rows.length ? rows.map((row, i) => `<tr><td><span class="sensor-key">${String(i + 1).padStart(2, '0')}</span></td><td>${dateTime(row.data)}</td><td><strong>${escape(format(row.valor, SENSOR_INFO[sensor].decimals))}</strong> ${SENSOR_INFO[sensor].unit}</td></tr>`).join('') : '<tr><td class="table-empty" colspan="3">Ainda não há registros para este sensor.</td></tr>';
+    $('history-table').innerHTML = rows.length ? rows.map((row, i) => `<tr><td><span class="sensor-key">${String(i + 1).padStart(2, '0')}</span></td><td>${dateTime(row.data)}</td><td><strong>${escape(format(displayValue(sensor, row.valor), SENSOR_INFO[sensor].decimals))}</strong> ${SENSOR_INFO[sensor].unit}${sensor === 'luminosidade' ? `<small>${escape(format(row.valor))} ADC</small>` : ''}</td></tr>`).join('') : '<tr><td class="table-empty" colspan="3">Ainda não há registros para este sensor.</td></tr>';
     $('history-count').textContent = `${rows.length} registros${state.demo ? ' ilustrativos' : ' carregados'}`;
     $('download-csv').disabled = !rows.length || state.demo;
   } catch (error) {
@@ -414,9 +429,9 @@ function renderLimits() {
   const definitions = [
     ['temperatura', 'Temperatura', 'thermometer', '°C', 'Temperatura do ambiente medida pelo DHT.'],
     ['umidade', 'Umidade', 'drop', '%', 'Umidade relativa do ambiente medida pelo DHT.'],
-    ['luminosidade_bruta', 'Luminosidade', 'sun', 'ADC', 'Leitura bruta do LDR. Quanto maior, menos luz na montagem atual.']
+    ['luminosidade_bruta', 'Luminosidade', 'sun', 'ADC', 'Leitura bruta do LDR (0–4095). Quanto maior, menos luz. Os limites são em ADC; LCDs e dashboard mostram a luz em % relativa.']
   ];
-  $('limit-fields').innerHTML = definitions.map(([key, name, symbol, unit, description]) => `<article class="limit-card"><div class="limit-card-head"><div><span class="metric-icon ${key === 'temperatura' ? 'wine' : key === 'umidade' ? 'blue' : 'amber'}">${icon(symbol)}</span><h3>${name}</h3></div><span class="pill">${unit}</span></div><p>${description}</p><div class="form-grid"><label class="field">Mínimo (${unit})<input id="limit-min-${key}" type="number" step="${key === 'luminosidade_bruta' ? '1' : 'any'}" ${key !== 'temperatura' ? `min="0" max="${key === 'umidade' ? 100 : 4095}"` : ''} required></label><label class="field">Máximo (${unit})<input id="limit-max-${key}" type="number" step="${key === 'luminosidade_bruta' ? '1' : 'any'}" ${key !== 'temperatura' ? `min="0" max="${key === 'umidade' ? 100 : 4095}"` : ''} required></label></div><label class="checkbox-row"><input id="limit-active-${key}" type="checkbox"><span>Habilitar alerta deste sensor</span></label></article>`).join('');
+  $('limit-fields').innerHTML = definitions.map(([key, name, symbol, unit, description]) => `<article class="limit-card"><div class="limit-card-head"><div><span class="metric-icon ${key === 'temperatura' ? 'wine' : key === 'umidade' ? 'blue' : 'amber'}">${icon(symbol)}</span><h3>${name}</h3></div><span class="pill">${unit}</span></div><p>${description}</p><div class="form-grid"><label class="field">Mínimo (${unit})<input id="limit-min-${key}" type="number" step="${key === 'luminosidade_bruta' ? '1' : 'any'}" ${key !== 'temperatura' ? `min="0" max="${key === 'umidade' ? 100 : 4095}"` : ''} required></label><label class="field">Máximo (${unit})<input id="limit-max-${key}" type="number" step="${key === 'luminosidade_bruta' ? '1' : 'any'}" ${key !== 'temperatura' ? `min="0" max="${key === 'umidade' ? 100 : 4095}"` : ''} required></label></div>${key === 'luminosidade_bruta' ? '<small class="limit-hint" id="limit-hint-luminosidade_bruta"></small>' : ''}<label class="checkbox-row"><input id="limit-active-${key}" type="checkbox"><span>Habilitar alerta deste sensor</span></label></article>`).join('');
   fillLimits();
 }
 function fillLimits() {
@@ -427,6 +442,15 @@ function fillLimits() {
     $(`limit-active-${key}`).checked = item?.ativo ?? false;
   }
   $('save-limits').disabled = !state.limits;
+  updateLuminosityHint();
+}
+// Mostra quanto os limites em ADC valem em % de luz (escala invertida).
+function updateLuminosityHint() {
+  const min = $('limit-min-luminosidade_bruta').value, max = $('limit-max-luminosidade_bruta').value;
+  const valid = value => value !== '' && Number.isFinite(Number(value));
+  $('limit-hint-luminosidade_bruta').textContent = valid(min) && valid(max)
+    ? `Em % de luz: mínimo ${format(Number(min))} ADC ≈ ${luminosityPercent(Number(min))}% · máximo ${format(Number(max))} ADC ≈ ${luminosityPercent(Number(max))}%.`
+    : 'Preencha os dois limites para ver o equivalente em % de luz.';
 }
 async function loadLimits() {
   const epoch = state.epoch;
@@ -445,6 +469,7 @@ function readLimitsForm() {
 }
 // Validação imediata: o botão só fica ativo com faixas válidas.
 function checkLimitsForm() {
+  updateLuminosityHint();
   if (!state.limits) return;
   try { validateLimits(readLimitsForm()); $('save-limits').disabled = false; statusText('limits-status', 'Alterações ainda não salvas.'); }
   catch (error) { $('save-limits').disabled = true; statusText('limits-status', error.message, 'error'); }
@@ -639,7 +664,7 @@ async function changeConnection(base, demo) {
   state.epoch++; state.alertGeneration++; state.commandVersion++;
   api = new ApiClient(base); saveStored('agnello-api', api.base);
   state.demo = demo; state.alerts = null; state.actuator = null; state.limits = null; state.monitorError = null;
-  state.previousAlerts = null; state.lastChart = 0; state.devices = []; state.resources = []; state.history = []; state.historyLoaded = false;
+  state.previousAlerts = null; state.previousActions = null; state.lastChart = 0; state.devices = []; state.resources = []; state.history = []; state.historyLoaded = false;
   state.chartEpoch.overview++; state.chartEpoch.history++;
   releaseGraph('overview'); releaseGraph('history');
   $('demo-banner').hidden = !demo; $('chart-source').textContent = demo ? 'Gráfico ilustrativo · dados de exemplo' : 'Histórico via STH-Comet · gráfico Matplotlib';
@@ -661,7 +686,7 @@ $('query-actuator').onclick = () => busy($('query-actuator'), () => queryActuato
 $('toggle-alerts').onclick = toggleAlerts;
 $('refresh').onclick = () => busy($('refresh'), async () => { await poll(); await queryActuator({ silent: true }); if (state.page === 'historico') await loadHistory(); if (state.page === 'dispositivos') await loadDevices(); if (state.page === 'fiware') await loadResource(); });
 $('reload-history').onclick = () => busy($('reload-history'), loadHistory);
-$('download-csv').onclick = () => { if (!state.demo && state.historyLoaded && state.history.length) download(new Blob([csvHistory(state.history)], { type: 'text/csv;charset=utf-8' }), `agnello-${state.historySensor}.csv`); };
+$('download-csv').onclick = () => { if (!state.demo && state.historyLoaded && state.history.length) download(new Blob([csvHistory(state.history, state.historySensor)], { type: 'text/csv;charset=utf-8' }), `agnello-${state.historySensor}.csv`); };
 $('download-png').onclick = async () => { if (state.demo || !state.graphURLs.history) return; const blob = await fetch(state.graphURLs.history).then(res => res.blob()); download(blob, `agnello-${state.historySensor}.png`); };
 $('reload-devices').onclick = () => busy($('reload-devices'), loadDevices);
 $('device-search').oninput = renderDevices;

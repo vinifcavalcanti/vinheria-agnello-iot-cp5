@@ -107,6 +107,8 @@ O sistema permite configurar limites para:
 - Umidade.
 - Luminosidade.
 
+Os limites de luminosidade são configurados em ADC (leitura bruta do LDR, 0–4095). Os LCDs e a dashboard exibem a luz como **% relativa** (0% = escuro, 100% = muito claro), calculada a partir do ADC só para apresentação; não é uma medida em lux. Detalhes em [`docs/ARQUITETURA_E_INTEGRACAO.md`](docs/ARQUITETURA_E_INTEGRACAO.md).
+
 Quando uma condição ultrapassa os limites definidos, a aplicação pode registrar alertas e acionar os indicadores visuais e sonoros do monitor.
 
 O backend também identifica situações em que os dados deixam de ser atualizados.
