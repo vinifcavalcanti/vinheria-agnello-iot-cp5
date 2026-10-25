@@ -64,6 +64,13 @@ alertas_ativos = []
 inicio_alerta = time.ticks_ms()
 
 
+def luz_percentual(adc):
+    # Indice relativo para exibicao (nao e lux). ADC maior = menos luz:
+    # 0 ADC -> 100% (muito claro), 4095 ADC -> 0% (escuro).
+    porcentagem = round((4095 - adc) * 100 / 4095)
+    return max(0, min(100, porcentagem))
+
+
 def atualizar_lcd():
     global tela_atual
     global ultima_troca_lcd
@@ -94,10 +101,11 @@ def atualizar_lcd():
             else "UMID: --"
         )
     else:
+        # Apenas exibicao: o sistema continua usando o ADC.
         linha1 = (
-            "LDR: {} ADC".format(luminosidade_lcd)
+            "Luz: {}%".format(luz_percentual(luminosidade_lcd))
             if luminosidade_lcd is not None
-            else "LDR: --"
+            else "Luz: --"
         )
         linha2 = (
             "LED: {}%".format(brilho_confirmado)

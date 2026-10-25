@@ -171,12 +171,19 @@ def consultar_historico(sensor: str):
         for registro in registros
     ]
 
+def luz_percentual(adc: float) -> int:
+    # Indice relativo para exibicao (nao e lux). ADC maior = menos luz:
+    # 0 ADC -> 100% (muito claro), 4095 ADC -> 0% (escuro).
+    porcentagem = round((4095 - adc) * 100 / 4095)
+    return max(0, min(100, porcentagem))
+
+
 @app.get("/graficos/{sensor}")
 def gerar_grafico(sensor: str):
     configuracoes = {
         "temperatura": ("Historico de temperatura", "Temperatura (°C)", "#2563eb"),
         "umidade": ("Historico de umidade", "Umidade (%)", "#16a34a"),
-        "luminosidade": ("Historico de luminosidade", "Leitura bruta do LDR", "#d97706"),
+        "luminosidade": ("Historico de luminosidade", "Luminosidade relativa (%)", "#d97706"),
         "brilho": ("Historico do atuador", "Brilho do LED (%)", "#9333ea"),
     }
 
@@ -206,6 +213,10 @@ def gerar_grafico(sensor: str):
 
     valores = [float(registro["valor"]) for registro in registros]
 
+    # Somente o grafico mostra a luminosidade em %; dados e rotas seguem em ADC.
+    if sensor == "luminosidade":
+        valores = [luz_percentual(valor) for valor in valores]
+
     figura = Figure(figsize=(9, 4), layout="constrained")
     FigureCanvasAgg(figura)
     eixo = figura.subplots()
@@ -220,6 +231,8 @@ def gerar_grafico(sensor: str):
         eixo.set_ylim(-5, 105)
     else:
         eixo.plot(datas, valores, color=cor, marker="o")
+        if sensor == "luminosidade":
+            eixo.set_ylim(-5, 105)
     eixo.set_title(titulo)
     eixo.set_xlabel("Horario de Brasilia")
     eixo.set_ylabel(unidade)

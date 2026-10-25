@@ -24,7 +24,9 @@ Antes de mover funções entre `app.js` e `core.js`, verifique suas referências
 
 ## Funcionalidades a preservar
 
-- Leituras atuais de temperatura, umidade e luminosidade.
+- Leituras atuais de temperatura, umidade e luminosidade. A luminosidade aparece em **% relativa** (card, painel de atuação, histórico e gráfico); a leitura e os limites em ADC continuam visíveis ao lado. A conversão fica em `luminosityPercent()` (`core.js`) e, no gráfico PNG, em `luz_percentual()` (`backend/main.py`).
+- Alertas de luminosidade descritos como "Pouca luz" / "Muita luz", porque a escala em % é invertida em relação ao ADC.
+- Formulário de limites de luminosidade em ADC, com o equivalente em % mostrado abaixo dos campos. O CSV do histórico de luminosidade traz o ADC e a %.
 - Exibição de status dos dispositivos, incluindo a atualização dos dados.
 - Gráficos e consultas de histórico via FIWARE/STH-Comet.
 - Controle da iluminação em **modo automático** e **modo manual**.
@@ -91,6 +93,7 @@ A dashboard **não deve presumir** que o ESP32 aplicou um comando só porque a c
 - [ ] Controle manual envia comandos e mostra estado confirmado.
 - [ ] Modo automático funciona sem ser sobrescrito pela interface.
 - [ ] Alterações de limites continuam sendo persistidas pelo backend e chegam aos ESPs.
+- [ ] Luminosidade em % no card, no histórico e no gráfico; limites de luminosidade continuam em ADC.
 - [ ] Painel de atuação ambiental mostra "Confirmado pelo ESP" com o Atuador ligado.
 - [ ] Alertas continuam aparecendo e mudando de estado.
 - [ ] Seções administrativas FIWARE continuam operacionais.

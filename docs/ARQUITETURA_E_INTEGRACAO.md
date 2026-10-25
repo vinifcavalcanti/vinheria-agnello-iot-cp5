@@ -66,6 +66,24 @@ Publica leituras de temperatura, umidade e luminosidade; calcula comandos de bri
 
 A faixa vem da dashboard (`luminosidade_bruta` em `limites.json`), recebida pelo tópico de limites. Até essa mensagem chegar, o Monitor usa o padrão **1000–2500**, igual ao `limites.json` do repositório.
 
+**Luminosidade em porcentagem (só na apresentação):** o LDR é lido como ADC (0–4095) e o sistema inteiro continua usando esse valor: FIWARE, histórico, API, limites, alertas e controle do brilho. Para facilitar a leitura, os LCDs, a dashboard e o gráfico de luminosidade mostram um **índice relativo de luz**:
+
+```text
+luz (%) = round((4095 - ADC) * 100 / 4095), limitado a 0–100
+```
+
+| ADC | Luz exibida |
+|---|---|
+| 0 | 100% (muito claro) |
+| 1000 | 76% |
+| 2500 | 39% |
+| 4019 | 2% |
+| 4095 | 0% (escuro) |
+
+A escala é invertida em relação ao ADC (ADC maior = menos luz) e é uma estimativa relativa: **não equivale a lux**.
+
+**LCD do Monitor:** ao ligar, mostra a mesma apresentação do Atuador ("GRUPO DEBUGGERS" e "VINHERIA AGNELLO / ESP32 MONITOR", cerca de 3 s, enquanto o Wi-Fi conecta). Depois alterna duas telas a cada 3 s: `TEMP` / `UMID` e `Luz: 2%` / `LED: 100%` (brilho confirmado pelo Atuador).
+
 Na montagem física, **valide o sentido da leitura ADC**: na ligação do Wokwi usada nos testes, valores maiores correspondiam a menos luz ambiente. O comportamento pode mudar conforme o divisor resistivo e o módulo LDR reais.
 
 ## 2. ESP32 Atuador
@@ -103,7 +121,7 @@ Os próprios limites contam como dentro da faixa. Outros estados:
 | Iluminação | `Modo: Automatico` / `Modo: Manual` | `Brilho: 50%` (brilho realmente aplicado) |
 | Temperatura | `Temp: 25.0 C` | ação ou estado |
 | Umidade | `Umid: 65%` | ação ou estado |
-| Luminosidade | `Luz: 1800 ADC` | ação ou estado |
+| Luminosidade | `Luz: 56%` (% relativa, calculada do ADC) | ação ou estado |
 
 Um `*` no fim da segunda linha indica que o Atuador ainda usa os **limites padrão** do firmware (cópia do `limites.json` do repositório: temperatura 10–30 °C, umidade 50–80%, LDR 1000–2500), porque a configuração da dashboard ainda não chegou. O LCD também mostra `Conectando WiFi`, `Conectando MQTT` e `Reconect. MQTT` com o número da tentativa.
 

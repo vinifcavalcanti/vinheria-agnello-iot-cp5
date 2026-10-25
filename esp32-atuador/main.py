@@ -181,13 +181,22 @@ def tela_iluminacao():
     return linha1, "Brilho: {}%".format(brilho_atual)
 
 
-def tela_sensor(sensor, rotulo, formato):
+def luz_percentual(adc):
+    # Indice relativo para exibicao (nao e lux). ADC maior = menos luz:
+    # 0 ADC -> 100% (muito claro), 4095 ADC -> 0% (escuro).
+    porcentagem = round((4095 - adc) * 100 / 4095)
+    return max(0, min(100, porcentagem))
+
+
+def tela_sensor(sensor, rotulo, formato, converter=None):
     valor = leituras[CHAVES[sensor]]
 
     if valor is None:
         linha1 = rotulo + "--"
     else:
-        linha1 = rotulo + formato.format(valor)
+        # A conversao so afeta o texto; as decisoes usam o valor original.
+        exibido = converter(valor) if converter else valor
+        linha1 = rotulo + formato.format(exibido)
 
     linha2 = decidir(sensor)
 
@@ -202,7 +211,7 @@ TELAS = (
     tela_iluminacao,
     lambda: tela_sensor("temperatura", "Temp: ", "{:.1f} C"),
     lambda: tela_sensor("umidade", "Umid: ", "{:.0f}%"),
-    lambda: tela_sensor("luminosidade_bruta", "Luz: ", "{} ADC")
+    lambda: tela_sensor("luminosidade_bruta", "Luz: ", "{}%", luz_percentual)
 )
 
 tela_atual = 0
