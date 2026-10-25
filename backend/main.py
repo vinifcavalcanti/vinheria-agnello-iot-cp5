@@ -26,7 +26,7 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-IP_SERVIDOR = "98.81.197.236"
+IP_SERVIDOR = "34.201.44.234"
 ORION = f"http://{IP_SERVIDOR}:1026"
 
 CABECALHOS = {

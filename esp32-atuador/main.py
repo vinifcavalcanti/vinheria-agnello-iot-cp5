@@ -11,7 +11,7 @@ i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=100000)
 lcd = I2cLcd(i2c, 0x27, 2, 16)
 
 
-SERVIDOR = "98.81.197.236"
+SERVIDOR = "34.201.44.234"
 
 # Comandos automaticos enviados pelo monitor
 TOPICO = b"cp5/agnello-8ea14fa3/lampada"

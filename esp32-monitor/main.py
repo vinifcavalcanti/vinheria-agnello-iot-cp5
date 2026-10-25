@@ -24,7 +24,7 @@ ultima_troca_lcd = time.ticks_ms()
 ultima_renderizacao_lcd = 0
 
 
-SERVIDOR = "98.81.197.236"
+SERVIDOR = "34.201.44.234"
 
 TOPICO = b"cp5/agnello-8ea14fa3/lampada"
 TOPICO_ESTADO = b"cp5/agnello-8ea14fa3/lampada/estado"
