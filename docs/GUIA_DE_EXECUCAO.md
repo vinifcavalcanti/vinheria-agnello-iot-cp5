@@ -1,6 +1,6 @@
 # Guia de Execução — Vinheria Agnello (CP5)
 
-Este guia explica como **reproduzir o ambiente de software já desenvolvido**. A montagem física (hands-on) é uma etapa separada e ainda depende dos componentes reais.
+Este guia explica como **reproduzir o ambiente de software**. Para o ESP32 físico, veja também a seção 9 e o *Manual de hardware* do README.
 
 ## 1. Baixar o projeto
 
@@ -121,9 +121,13 @@ O DHT22 e o LDR do Wokwi permitem mudar os valores clicando no componente durant
 10. **Reconexão:** reinicie só o Atuador. Ele deve receber os limites retidos na hora (sem `*`) e voltar a decidir assim que o Monitor publicar.
 11. **Dashboard:** o painel "Correções indicadas pelo ESP atuador" mostra "Confirmado pelo ESP" com as mesmas ações do LCD.
 
-## 9. Hands-on físico (pendente)
+## 9. Hands-on físico
 
-A simulação está pronta, mas a montagem precisa ser validada com as peças reais. Antes de ligar, compare o esquema `diagram.json` com o hardware, confira os níveis de tensão, resistores, alimentação do LCD e pinos de entrada/saída. Verifique também a rede Wi-Fi real: a rede `Wokwi-GUEST` existe no simulador e **não será utilizada no ESP32 físico**.
+1. Monte o circuito conforme o *Manual de hardware* do README e confira tensões, resistores e aterramento comum antes de energizar.
+2. No topo do `main.py`, ajuste `WIFI_SSID`, `WIFI_SENHA`, `SERVIDOR` e, no Monitor, `MODELO_DHT = "DHT11"`. A rede `Wokwi-GUEST` só existe no simulador.
+3. Grave `main.py`, `lcd_api.py` e `i2c_lcd.py` no ESP32 (Thonny ou `mpremote`) e reinicie.
+4. No terminal, espere `Wi-Fi conectado!` e `MQTT conectado!`. Sem LCD, aparece `LCD nao encontrado: seguindo sem display.` e o ESP continua funcionando.
+5. Na dashboard, confirme as leituras na visão geral, ligue **"Alertas no ESP monitor"** e force uma anomalia (por exemplo, cubra o LDR ou ajuste um trigger) para ver o LED azul piscar e o buzzer tocar.
 
 ## Segurança e origem
 

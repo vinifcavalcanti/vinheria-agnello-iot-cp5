@@ -7,7 +7,7 @@
 
 O **software desenvolvido nesta etapa está concluído e foi validado no ambiente de simulação**: dois ESP32 em MicroPython no Wokwi, backend FastAPI, comunicação MQTT/FIWARE e dashboard web. O repositório foi criado para **compartilhar essa base com o grupo**, não para indicar que toda a entrega acadêmica esteja terminada.
 
-**A etapa pendente é o hands-on:** montagem e integração dos componentes físicos, testes em hardware real e evidências da entrega. Outro integrante poderá aprimorar o visual/experiência da dashboard, preservando suas integrações.
+**Hands-on:** o ESP32 Monitor físico usa DHT11, LDR, LED azul e buzzer, com o mesmo `main.py` da simulação (sensor e Wi-Fi configuráveis no topo do arquivo). As instruções de montagem estão no *Manual de hardware* do README.
 
 ## Implementado e testado em simulação
 
@@ -24,16 +24,14 @@ O **software desenvolvido nesta etapa está concluído e foi validado no ambient
 
 **Importante:** esses testes comprovam funcionamento nos ambientes usados; **não substituem testes com dispositivos físicos** nem garantem disponibilidade futura da instância AWS.
 
-## Pendente para conclusão do CP5
+## Preparação para o hands-on
 
-- [ ] Montar fisicamente os circuitos do Monitor e do Atuador com os componentes disponíveis.
-- [ ] Confirmar pinagem, alimentação, compatibilidade dos módulos e proteção elétrica no hardware real.
-- [ ] Adaptar os códigos MicroPython apenas onde o hardware físico exigir (por exemplo, diferenças de LDR, LCD, Wi-Fi e PWM).
-- [ ] Testar comunicação ponta a ponta com os dois ESP32 físicos e a AWS.
-- [ ] Validar alertas, comandos de iluminação, LCDs, histórico e dashboard durante o hands-on.
-- [ ] Registrar fotos, vídeos, testes e resultados exigidos pelo professor.
-- [ ] Integrar eventuais melhorias visuais feitas pelo integrante responsável pela dashboard.
-- [ ] Consolidar a entrega final no repositório definido pelo grupo.
+- [x] Código dos ESP32 preparado para o hardware físico: `MODELO_DHT` (DHT11/DHT22), `WIFI_SSID`/`WIFI_SENHA` e LCD opcional (detecção automática em `0x27`/`0x3F`).
+- [x] Manual de hardware com as ligações de cada componente (README).
+- [x] Dashboard final integrada: gráficos dinâmicos (STH-Comet :8666), cadastro de dispositivos e ajuste de triggers.
+- [x] Simulações Wokwi atualizadas e validadas com a AWS.
+- [ ] Montar e gravar o ESP32 físico no laboratório e validar o fluxo ponta a ponta com a AWS.
+- [ ] Registrar fotos e vídeo do funcionamento para a entrega.
 
 ## Pontos de atenção para quem assumir
 

@@ -9,7 +9,7 @@ Explicar **como as partes já desenvolvidas se comunicam**, para que o grupo pos
 ```text
                     +-----------------------+
                     |   ESP32 Monitor       |
-                    | DHT22, LDR, buzzer,   |
+                    | DHT, LDR, buzzer,     |
                     | LED de alerta e LCD  |
                     +-----------+-----------+
                                 |
@@ -48,7 +48,7 @@ O Monitor usa **MicroPython** e executa no Wokwi, com os seguintes pinos usados 
 
 | Componente | GPIO / conexão |
 |---|---|
-| DHT22 | GPIO 15 |
+| DHT22 (Wokwi) / DHT11 (hands-on) | GPIO 15 |
 | LDR (entrada ADC) | GPIO 34 |
 | LED azul de alerta | GPIO 2 |
 | Buzzer PWM | GPIO 25 |
@@ -185,7 +185,7 @@ O backend fica em `backend/main.py`. As configurações de limites são mantidas
 
 - Revisar **alimentação e nível lógico** dos módulos (especialmente I2C/LCD e entradas analógicas).
 - Confirmar pinagem física, resistores, GPIOs e aterramento comum.
-- Ajustar conexão Wi-Fi: `Wokwi-GUEST` não é uma rede do ambiente físico.
+- Ajustar conexão Wi-Fi em `WIFI_SSID` / `WIFI_SENHA`: `Wokwi-GUEST` não é uma rede do ambiente físico. No Monitor, use `MODELO_DHT = "DHT11"` com o sensor físico.
 - Verificar ADC e calibrar limites conforme medições reais do LDR.
 - Testar PWM e LEDs sem exceder a corrente permitida pelo GPIO.
 - Verificar latência, reconexão MQTT e disponibilidade da AWS.
