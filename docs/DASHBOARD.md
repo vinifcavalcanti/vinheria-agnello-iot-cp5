@@ -6,7 +6,7 @@
 
 A dashboard **já funciona em ambiente local**, integrada ao backend FastAPI e aos serviços FIWARE utilizados no projeto. Ela pode receber melhorias visuais e de usabilidade, mas sua reestruturação **não deve eliminar os recursos de controle e monitoramento existentes**.
 
-A montagem física do hands-on ainda está pendente. A dashboard pode ser aprimorada independentemente, utilizando os dados do Wokwi e da AWS durante os testes.
+O histórico tem um **gráfico dinâmico** desenhado no navegador (`liveChart()` em `app.js`), com o valor de cada ponto ao passar o mouse e atualização automática a cada 15 s, além do gráfico Matplotlib gerado pelo backend. Os dois usam os dados do STH-Comet (API :8666).
 
 ## Arquivos
 

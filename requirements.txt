@@ -1,0 +1,2 @@
+# Dependências do backend FastAPI (a dashboard é HTML/CSS/JS e não precisa de pacotes).
+-r backend/requirements.txt

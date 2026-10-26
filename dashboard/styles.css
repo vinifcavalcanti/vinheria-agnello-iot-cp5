@@ -2113,3 +2113,11 @@ td small {
 @media(max-width:1000px){.actuation-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.actuation-grid{grid-template-columns:1fr;padding:0 17px 16px}.actuation-panel>.tiny-note{padding:10px 17px 16px}.actuation-item p,.actuation-item small{font-size:11px}}
 .limit-hint{display:block;margin:-4px 0 14px;font-size:11px;line-height:1.5;color:var(--muted)}
+/* Gráfico dinâmico do histórico */
+.live-chart-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;padding:4px 24px 0;font-size:12px}
+.live-chart-head span{color:var(--muted);font-size:11px}
+.live-chart{min-height:230px}
+.live-point{fill:#fff;stroke:#9B1D30;stroke-width:2;cursor:pointer;transition:r .15s}
+.live-point:hover{r:7;fill:#9B1D30}
+.live-chart-note{padding:0 24px 8px;font-size:10px;color:var(--muted)}
+@media(max-width:700px){.live-chart-head,.live-chart-note{padding-left:17px;padding-right:17px}}

@@ -372,6 +372,38 @@ function illustrativeChart(sensor) {
   const lines = [55, 105, 155, 205].map(y => `<line x1="50" y1="${y}" x2="625" y2="${y}" stroke="#eee7ec" stroke-dasharray="3 4"/>`).join('');
   return `<svg class="demo-chart" viewBox="0 0 670 265" role="img" aria-label="Gráfico ilustrativo de ${escape(SENSOR_INFO[sensor].name)}"><text x="50" y="23" font-family="Segoe UI,Arial" font-size="10" fill="#968490">DADOS ILUSTRATIVOS · NÃO É UM GRÁFICO DA API</text>${lines}<polyline points="${points}" fill="none" stroke="#58273d" stroke-width="2.5" stroke-linejoin="round"/><text x="50" y="245" font-family="Segoe UI,Arial" font-size="10" fill="#968490">${time(rows[0].data)}</text><text x="560" y="245" font-family="Segoe UI,Arial" font-size="10" fill="#968490">${time(rows.at(-1).data)}</text><text x="15" y="62" font-family="Segoe UI,Arial" font-size="10" fill="#968490">${format(high, 1)}</text><text x="15" y="207" font-family="Segoe UI,Arial" font-size="10" fill="#968490">${format(low, 1)}</text></svg>`;
 }
+// Gráfico dinâmico do histórico (SVG no navegador): cada ponto mostra data e
+// valor ao passar o mouse; os dados vêm de /historico, que consulta o STH-Comet.
+function liveChart(rows, sensor) {
+  if (!rows.length) return emptyHTML('Sem registros', 'Ainda não há leituras deste sensor no STH-Comet.');
+  const info = SENSOR_INFO[sensor], values = rows.map(r => Number(displayValue(sensor, r.valor)));
+  let low = Math.min(...values), high = Math.max(...values);
+  if (sensor === 'luminosidade' || sensor === 'brilho' || sensor === 'umidade') { low = Math.min(low, 0); high = Math.max(high, 100); }
+  if (high === low) { high += 1; low -= 1; }
+  const x = i => 60 + (rows.length === 1 ? 282 : i * 565 / (rows.length - 1)), y = v => 205 - (v - low) / (high - low) * 170;
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(f => { const v = low + f * (high - low); return `<line x1="60" y1="${y(v)}" x2="625" y2="${y(v)}" stroke="#eee7ec" stroke-dasharray="3 4"/><text x="52" y="${y(v) + 3}" text-anchor="end" font-size="10" fill="#968490">${format(v, info.decimals)}</text>`; }).join('');
+  const points = values.map((v, i) => `<circle class="live-point" cx="${x(i)}" cy="${y(v)}" r="4" data-i="${i}"><title>${escape(dateTime(rows[i].data))} · ${escape(format(v, info.decimals))} ${info.unit}</title></circle>`).join('');
+  return `<svg class="demo-chart" viewBox="0 0 670 245" role="img" aria-label="Gráfico dinâmico de ${escape(info.name)}">${grid}<polyline points="${values.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="#9B1D30" stroke-width="2" stroke-linejoin="round"/>${points}<text x="60" y="232" font-size="10" fill="#968490">${time(rows[0].data)}</text><text x="625" y="232" text-anchor="end" font-size="10" fill="#968490">${time(rows.at(-1).data)}</text></svg>`;
+}
+function renderLiveChart() {
+  const sensor = state.historySensor;
+  $('history-live').innerHTML = liveChart(state.history, sensor);
+  $('history-readout').textContent = 'Passe o mouse sobre os pontos para ver cada leitura.';
+}
+// Atualização periódica leve: só dados (tabela e gráfico dinâmico), sem o PNG.
+async function refreshHistoryLive() {
+  if (state.page !== 'historico' || state.demo || !state.historyLoaded || document.visibilityState !== 'visible') return;
+  const sensor = state.historySensor, token = state.historyEpoch, epoch = state.epoch;
+  try {
+    const rows = await api.request(`/historico/${sensor}`);
+    if (epoch !== state.epoch || token !== state.historyEpoch || !Array.isArray(rows)) return;
+    state.history = rows; renderHistoryTable(rows, sensor); renderLiveChart();
+  } catch { /* mantém o último gráfico; o botão Atualizar mostra o erro */ }
+}
+function renderHistoryTable(rows, sensor) {
+  $('history-table').innerHTML = rows.length ? rows.map((row, i) => `<tr><td><span class="sensor-key">${String(i + 1).padStart(2, '0')}</span></td><td>${dateTime(row.data)}</td><td><strong>${escape(format(displayValue(sensor, row.valor), SENSOR_INFO[sensor].decimals))}</strong> ${SENSOR_INFO[sensor].unit}${sensor === 'luminosidade' ? `<small>${escape(format(row.valor))} ADC</small>` : ''}</td></tr>`).join('') : '<tr><td class="table-empty" colspan="3">Ainda não há registros para este sensor.</td></tr>';
+  $('history-count').textContent = `${rows.length} registros${state.demo ? ' ilustrativos' : ' carregados'}`;
+}
 function releaseGraph(kind) { if (state.graphURLs[kind]) { URL.revokeObjectURL(state.graphURLs[kind]); delete state.graphURLs[kind]; } }
 async function loadChart(kind, sensor) {
   const target = $(`${kind}-chart`), token = ++state.chartEpoch[kind], epoch = state.epoch;
@@ -405,17 +437,17 @@ async function loadHistory() {
   $('history-title').textContent = SENSOR_INFO[sensor].name;
   $('history-unit').textContent = `VALOR (${SENSOR_INFO[sensor].unit})`;
   $('history-table').innerHTML = '<tr><td class="table-empty" colspan="3">Consultando o histórico…</td></tr>';
+  $('history-live').innerHTML = '<p class="loading">Carregando gráfico…</p>';
   const graph = loadChart('history', sensor);
   try {
     const rows = state.demo ? demoHistory(sensor) : await api.request(`/historico/${sensor}`);
     if (epoch !== state.epoch || token !== state.historyEpoch) return;
     if (!Array.isArray(rows)) throw new Error('Formato de histórico inesperado.');
     state.history = rows; state.historyLoaded = true;
-    $('history-table').innerHTML = rows.length ? rows.map((row, i) => `<tr><td><span class="sensor-key">${String(i + 1).padStart(2, '0')}</span></td><td>${dateTime(row.data)}</td><td><strong>${escape(format(displayValue(sensor, row.valor), SENSOR_INFO[sensor].decimals))}</strong> ${SENSOR_INFO[sensor].unit}${sensor === 'luminosidade' ? `<small>${escape(format(row.valor))} ADC</small>` : ''}</td></tr>`).join('') : '<tr><td class="table-empty" colspan="3">Ainda não há registros para este sensor.</td></tr>';
-    $('history-count').textContent = `${rows.length} registros${state.demo ? ' ilustrativos' : ' carregados'}`;
+    renderHistoryTable(rows, sensor); renderLiveChart();
     $('download-csv').disabled = !rows.length || state.demo;
   } catch (error) {
-    if (epoch === state.epoch && token === state.historyEpoch) { $('history-table').innerHTML = `<tr><td class="table-empty" colspan="3">${escape(error.message)}</td></tr>`; $('history-count').textContent = 'Histórico indisponível'; }
+    if (epoch === state.epoch && token === state.historyEpoch) { $('history-live').innerHTML = emptyHTML('Gráfico indisponível', error.message); $('history-table').innerHTML = `<tr><td class="table-empty" colspan="3">${escape(error.message)}</td></tr>`; $('history-count').textContent = 'Histórico indisponível'; }
   }
   await graph;
   if (epoch === state.epoch && token === state.historyEpoch) $('download-png').disabled = state.demo || !state.graphURLs.history;
@@ -711,6 +743,13 @@ window.addEventListener('hashchange', showPage);
 // Sem envio no unload: o navegador não garante finalizar fetch/MQTT.
 // Para encerrar os alarmes, o usuário desativa a automação antes de sair.
 setInterval(() => { $('clock').textContent = `${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: 'short' }).format(new Date())} · ${time(new Date().toISOString())}`; renderActuator(); }, 1000);
+setInterval(() => void refreshHistoryLive(), 15000);
+// Mostra a leitura do ponto sob o mouse (ou toque) no gráfico dinâmico.
+$('history-live').addEventListener('pointerover', event => {
+  const point = event.target.closest('.live-point'); if (!point) return;
+  const row = state.history[Number(point.dataset.i)], info = SENSOR_INFO[state.historySensor]; if (!row) return;
+  $('history-readout').textContent = `${dateTime(row.data)} · ${format(displayValue(state.historySensor, row.valor), info.decimals)} ${info.unit}${state.historySensor === 'luminosidade' ? ` (${format(row.valor)} ADC)` : ''}`;
+});
 // Consulta periódica do atuador: mantém o status online e as decisões ambientais.
 setInterval(() => { if (!state.demo && !state.commandPending && document.visibilityState === 'visible') void queryActuator({ silent: true }); }, 15000);
 activity('Dashboard iniciada. Aguardando leituras da API.');
