@@ -6,12 +6,36 @@ import json
 
 from i2c_lcd import I2cLcd
 
-# Inicializa o LCD 16x2 I2C
+# Inicializa o LCD 16x2 I2C. Procura os enderecos comuns (0x27 no
+# Wokwi, 0x3F em varios modulos fisicos). Sem LCD, o ESP segue
+# funcionando normalmente, apenas sem display.
+class LcdAusente:
+    def clear(self):
+        pass
+
+    def move_to(self, coluna, linha):
+        pass
+
+    def putstr(self, texto):
+        pass
+
+
 i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=100000)
-lcd = I2cLcd(i2c, 0x27, 2, 16)
+try:
+    enderecos = [e for e in (0x27, 0x3F) if e in i2c.scan()]
+    lcd = I2cLcd(i2c, enderecos[0], 2, 16)
+except (OSError, IndexError):
+    print("LCD nao encontrado: seguindo sem display.")
+    lcd = LcdAusente()
 
 
-SERVIDOR = "34.201.44.234"
+SERVIDOR = "100.53.117.116"
+
+# ===== Configuracao: Wokwi x ESP32 fisico (hands-on) =====
+# Wokwi: rede "Wokwi-GUEST" sem senha.
+# ESP32 fisico: troque pela rede do laboratorio ou do celular.
+WIFI_SSID = "Wokwi-GUEST"
+WIFI_SENHA = ""
 
 # Comandos automaticos enviados pelo monitor
 TOPICO = b"cp5/agnello-8ea14fa3/lampada"
@@ -456,7 +480,7 @@ def receber_comando(topico, mensagem):
 # Conecta ao Wi-Fi enquanto a animacao inicial roda
 wifi = network.WLAN(network.STA_IF)
 wifi.active(True)
-wifi.connect("Wokwi-GUEST", "")
+wifi.connect(WIFI_SSID, WIFI_SENHA)
 
 print("Conectando ao Wi-Fi...")
 animacao_inicial()

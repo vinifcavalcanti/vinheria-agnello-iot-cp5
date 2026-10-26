@@ -7,9 +7,27 @@ import json
 from machine import I2C
 from i2c_lcd import I2cLcd
 
-# Inicializa o LCD 16x2 I2C
+# Inicializa o LCD 16x2 I2C. Procura os enderecos comuns (0x27 no
+# Wokwi, 0x3F em varios modulos fisicos). Sem LCD, o ESP segue
+# funcionando normalmente, apenas sem display.
+class LcdAusente:
+    def clear(self):
+        pass
+
+    def move_to(self, coluna, linha):
+        pass
+
+    def putstr(self, texto):
+        pass
+
+
 i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=100000)
-lcd = I2cLcd(i2c, 0x27, 2, 16)
+try:
+    enderecos = [e for e in (0x27, 0x3F) if e in i2c.scan()]
+    lcd = I2cLcd(i2c, enderecos[0], 2, 16)
+except (OSError, IndexError):
+    print("LCD nao encontrado: seguindo sem display.")
+    lcd = LcdAusente()
 
 
 # Estado das informacoes exibidas no LCD
@@ -24,7 +42,15 @@ ultima_troca_lcd = time.ticks_ms()
 ultima_renderizacao_lcd = 0
 
 
-SERVIDOR = "34.201.44.234"
+SERVIDOR = "100.53.117.116"
+
+# ===== Configuracao: Wokwi x ESP32 fisico (hands-on) =====
+# Wokwi: rede "Wokwi-GUEST" sem senha.
+# ESP32 fisico: troque pela rede do laboratorio ou do celular.
+WIFI_SSID = "Wokwi-GUEST"
+WIFI_SENHA = ""
+# Sensor de temperatura/umidade: "DHT22" no Wokwi, "DHT11" no hands-on.
+MODELO_DHT = "DHT22"
 
 TOPICO = b"cp5/agnello-8ea14fa3/lampada"
 TOPICO_ESTADO = b"cp5/agnello-8ea14fa3/lampada/estado"
@@ -41,7 +67,7 @@ luz_minima = 1000
 luz_maxima = 2500
 ultimo_limite_recebido = None
 
-sensor = dht.DHT22(Pin(15))
+sensor = dht.DHT11(Pin(15)) if MODELO_DHT == "DHT11" else dht.DHT22(Pin(15))
 
 ldr = ADC(Pin(34))
 ldr.atten(ADC.ATTN_11DB)
@@ -270,7 +296,7 @@ def receber_mensagem(topico, mensagem):
 
 wifi = network.WLAN(network.STA_IF)
 wifi.active(True)
-wifi.connect("Wokwi-GUEST", "")
+wifi.connect(WIFI_SSID, WIFI_SENHA)
 
 # Conecta ao Wi-Fi enquanto a animacao inicial roda
 print("Conectando ao Wi-Fi...")
